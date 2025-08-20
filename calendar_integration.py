@@ -54,31 +54,101 @@ class GoogleCalendarIntegration:
             print(f"❌ Google Calendar autentiseringsfeil: {e}")
             return False
     
-    def create_meeting_event(self, meeting: Dict) -> Optional[str]:
-        """Opprett et kalenderevent for et møte."""
+    def get_calendar_meetings(self, days_ahead: int = 9) -> List[Dict]:
+        """Hent møter fra Google Calendar for de neste dagene."""
         if not self.service:
             print("❌ Google Calendar service ikke tilgjengelig")
-            return None
+            return []
         
         try:
-            # Bygg event-data
-            event_data = self._build_event_data(meeting)
+            # Sett tidsramme: i dag + neste N dager
+            from datetime import datetime, timedelta
+            now = datetime.now()
+            today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_date = today + timedelta(days=days_ahead + 1)
             
-            # Opprett event
-            event = self.service.events().insert(
+            time_min = today.isoformat() + 'Z'
+            time_max = end_date.isoformat() + 'Z'
+            
+            # Hent events fra kalenderen
+            events_result = self.service.events().list(
                 calendarId=self.calendar_id,
-                body=event_data
+                timeMin=time_min,
+                timeMax=time_max,
+                singleEvents=True,
+                orderBy='startTime',
+                maxResults=250
             ).execute()
             
-            event_id = event.get('id')
-            print(f"✅ Kalenderevent opprettet: {meeting['title']} ({event_id})")
-            return event_id
+            events = events_result.get('items', [])
             
-        except HttpError as e:
-            print(f"❌ Google Calendar API-feil for '{meeting['title']}': {e}")
-            return None
+            # Konverter til vårt møte-format
+            meetings = []
+            for event in events:
+                meeting = self._convert_calendar_event_to_meeting(event)
+                if meeting:
+                    meetings.append(meeting)
+            
+            print(f"📅 Hentet {len(meetings)} møter fra Google Calendar")
+            return meetings
+            
         except Exception as e:
-            print(f"❌ Uventet feil ved opprettelse av kalenderevent: {e}")
+            print(f"❌ Feil ved henting fra Google Calendar: {e}")
+            return []
+    
+    def _convert_calendar_event_to_meeting(self, event) -> Optional[Dict]:
+        """Konverter Google Calendar event til vårt møte-format."""
+        try:
+            # Hent møte-info
+            title = event.get('summary', 'Kalender-møte')
+            description = event.get('description', '')
+            location = event.get('location', 'Ikke oppgitt')
+            
+            # Parse start-tid
+            start = event.get('start', {})
+            if 'dateTime' in start:
+                # Timed event
+                start_datetime = datetime.fromisoformat(start['dateTime'].replace('Z', '+00:00'))
+                meeting_date = start_datetime.strftime('%Y-%m-%d')
+                meeting_time = start_datetime.strftime('%H:%M')
+            elif 'date' in start:
+                # All-day event
+                meeting_date = start['date']
+                meeting_time = None
+            else:
+                return None
+            
+            # Finn kommune-navn (standard til "Manuelt lagt til")
+            kommune = "Manuelt lagt til"
+            
+            # Prøv å parse kommune fra beskrivelse eller tittel
+            import re
+            kommune_match = re.search(r'Kommune:\s*([^,\n\r]+)', description, re.IGNORECASE)
+            if kommune_match:
+                kommune = kommune_match.group(1).strip()
+            elif 'kommune' in title.lower():
+                # Forsøk å finne kommune-navn i tittel
+                parts = title.split('(')
+                if len(parts) > 1:
+                    potential_kommune = parts[-1].rstrip(')')
+                    if 'kommune' in potential_kommune.lower():
+                        kommune = potential_kommune
+            
+            # Hent event URL hvis tilgjengelig
+            event_url = event.get('htmlLink', '')
+            
+            return {
+                'title': title,
+                'date': meeting_date,
+                'time': meeting_time,
+                'location': location,
+                'kommune': kommune,
+                'url': event_url,
+                'raw_text': f"Google Calendar: {title}"
+            }
+            
+        except Exception as e:
+            print(f"⚠️  Kunne ikke konvertere kalenderevent: {e}")
             return None
     
     def _build_event_data(self, meeting: Dict) -> Dict:
@@ -191,43 +261,47 @@ class GoogleCalendarIntegration:
             print(f"⚠️  Kunne ikke sjekke om event eksisterer: {e}")
             return False
 
-def add_meetings_to_google_calendar(meetings: List[Dict], test_mode: bool = False) -> int:
+def get_calendar_meetings(days_ahead: int = 9, test_mode: bool = False) -> List[Dict]:
     """
-    Hovedfunksjon for å legge til møter i Google Calendar.
+    Hovedfunksjon for å hente møter fra Google Calendar.
     
     Args:
-        meetings: Liste med møter
-        test_mode: Hvis True, skriv ut hva som ville blitt gjort uten å faktisk gjøre det
+        days_ahead: Antall dager frem i tid å hente møter for
+        test_mode: Hvis True, returner mock-data i stedet for å kontakte API
     
     Returns:
-        Antall møter lagt til
+        Liste med møter fra kalenderen
     """
     if test_mode:
-        print("🧪 TEST-MODUS: Google Calendar-integrasjon")
-        print(f"Ville lagt til {len(meetings)} møter i kalender:")
-        for meeting in meetings:
-            print(f"  📅 {meeting['date']} {meeting.get('time', 'ingen tid')} - {meeting['title']} ({meeting['kommune']})")
-        return len(meetings)
+        print("🧪 TEST-MODUS: Google Calendar-lesing")
+        # Returner noen mock calendar-møter for testing
+        from datetime import datetime, timedelta
+        today = datetime.now().date()
+        return [
+            {
+                'title': 'Test calendar-møte',
+                'date': (today + timedelta(days=1)).strftime('%Y-%m-%d'),
+                'time': '14:00',
+                'location': 'Kontoret',
+                'kommune': 'Manuelt lagt til',
+                'url': 'https://calendar.google.com/calendar',
+                'raw_text': 'Google Calendar: Test calendar-møte'
+            }
+        ]
     
     calendar_integration = GoogleCalendarIntegration()
-    return calendar_integration.add_meetings_to_calendar(meetings)
+    if not calendar_integration.authenticate():
+        return []
+    
+    return calendar_integration.get_calendar_meetings(days_ahead)
 
 def main():
     """Test Google Calendar-integrasjon."""
-    test_meetings = [
-        {
-            'title': 'Test-møte',
-            'date': '2025-08-21',
-            'time': '10:00',
-            'location': 'Rådhuset',
-            'kommune': 'Test kommune',
-            'url': 'https://example.com'
-        }
-    ]
-    
-    print("🧪 Tester Google Calendar-integrasjon...")
-    result = add_meetings_to_google_calendar(test_meetings, test_mode=True)
-    print(f"Test fullført: {result} møter ville blitt lagt til")
+    print("🧪 Tester Google Calendar-lesing...")
+    result = get_calendar_meetings(days_ahead=9, test_mode=True)
+    print(f"Test fullført: {len(result)} møter hentet fra kalender")
+    for meeting in result:
+        print(f"  📅 {meeting['date']} {meeting.get('time', 'hele dagen')} - {meeting['title']} ({meeting['kommune']})")
 
 if __name__ == '__main__':
     main()
