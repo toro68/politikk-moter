@@ -1,0 +1,38 @@
+name: Politiske møter - Daglig Slack-melding
+
+on:
+  schedule:
+    # Kjør hver dag kl. 08:00 norsk tid (06:00 UTC)
+    - cron: '0 6 * * *'
+  workflow_dispatch:  # Tillat manuell kjøring
+
+jobs:
+  send-meeting-digest:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests beautifulsoup4 playwright
+        python -m playwright install chromium
+    
+    - name: Run scraper and send to Slack
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      run: |
+        python scraper.py
+    
+    - name: Debug on failure
+      if: failure()
+      run: |
+        echo "Scraper feilet. Kjører i debug-modus..."
+        python scraper.py --debug
