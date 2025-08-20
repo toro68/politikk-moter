@@ -54,7 +54,7 @@ KOMMUNE_URLS = [
         "type": "onacos"
     },
     {
-        "name": "Elements Cloud (971045698)",
+        "name": "Rogaland fylkeskommune",
         "url": "https://prod01.elementscloud.no/publikum/971045698/Dmb",
         "type": "elements"
     },
