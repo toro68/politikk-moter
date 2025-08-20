@@ -26,6 +26,14 @@ except ImportError:
     PLAYWRIGHT_AVAILABLE = False
     print("⚠️  Playwright ikke tilgjengelig. Bruker kun requests/BeautifulSoup.")
 
+# Import Google Calendar integration
+try:
+    from calendar_integration import add_meetings_to_google_calendar
+    CALENDAR_AVAILABLE = True
+except ImportError:
+    CALENDAR_AVAILABLE = False
+    print("⚠️  Google Calendar-integrasjon ikke tilgjengelig.")
+
 # Konfigurasjon av kilde-URLer
 KOMMUNE_URLS = [
     {
@@ -677,6 +685,7 @@ def main():
     # Sjekk for force-send flag
     force_send = '--force' in sys.argv
     debug_mode = '--debug' in sys.argv or '--test' in sys.argv
+    calendar_mode = '--calendar' in sys.argv or os.getenv('ENABLE_CALENDAR', '').lower() in ['true', '1', 'yes']
     
     # Scrape møter
     all_meetings = scrape_all_meetings()
@@ -708,6 +717,7 @@ def main():
     slack_message = format_slack_message(filtered_meetings)
     
     # Send til Slack (med sikkerhet mot utilsiktet sending)
+    slack_success = False
     if debug_mode:
         print("🎭 DEBUG-MODUS: Viser Slack-melding uten å sende")
         print("=" * 50)
@@ -716,10 +726,31 @@ def main():
         print("\nFor å sende til Slack:")
         print("  python scraper.py --force")
         print("  ELLER sett TESTING=false")
+        slack_success = True  # Behandle som vellykket i debug-modus
     else:
-        success = send_to_slack(slack_message, force_send=force_send)
-        if not success:
-            sys.exit(1)
+        slack_success = send_to_slack(slack_message, force_send=force_send)
+        if not slack_success:
+            print("❌ Slack-sending feilet")
+    
+    # Google Calendar-integrasjon (kun hvis Slack var vellykket eller i debug-modus)
+    if calendar_mode and CALENDAR_AVAILABLE and (slack_success or debug_mode):
+        print("\n📅 Legger til møter i Google Calendar...")
+        try:
+            added_count = add_meetings_to_google_calendar(filtered_meetings, test_mode=debug_mode)
+            if debug_mode:
+                print(f"🧪 VILLE lagt til {added_count} møter i Google Calendar")
+            else:
+                print(f"✅ Lagt til {added_count} nye møter i Google Calendar")
+        except Exception as e:
+            print(f"❌ Google Calendar-feil: {e}")
+    elif calendar_mode and not CALENDAR_AVAILABLE:
+        print("⚠️  Google Calendar-integrasjon ikke tilgjengelig (mangler avhengigheter)")
+    elif calendar_mode:
+        print("⚠️  Google Calendar-integrasjon hoppet over (Slack-sending feilet)")
+    
+    # Exit med feilkode hvis noe feilet (kun i produksjon)
+    if not debug_mode and not slack_success:
+        sys.exit(1)
 
 if __name__ == '__main__':
     main()
