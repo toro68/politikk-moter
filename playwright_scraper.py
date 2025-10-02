@@ -142,6 +142,106 @@ class PlaywrightMoteParser:
 
     def _extract_meetings_from_soup(self, soup: BeautifulSoup, kommune_name: str) -> List[Dict]:
         meetings = []
+
+        # First: try to parse calendar-style tables where header cells are month names (Jan..Des)
+        tables = soup.find_all('table')
+        months_map = {
+            'jan':1,'januar':1,'feb':2,'februar':2,'mar':3,'mars':3,'apr':4,'april':4,
+            'mai':5,'jun':6,'juni':6,'jul':7,'juli':7,'aug':8,'august':8,'sep':9,'sept':9,'september':9,
+            'okt':10,'oktober':10,'nov':11,'november':11,'des':12,'desember':12
+        }
+
+        for table in tables:
+            first_row = table.find('tr')
+            if not first_row:
+                continue
+            header_cells = first_row.find_all(['th', 'td'])
+            header_texts = [hc.get_text(strip=True).lower() for hc in header_cells]
+            if not any((h and h[:3] in months_map) for h in header_texts):
+                continue
+
+            # Map header column index -> month number
+            month_indices = {}
+            for idx, txt in enumerate(header_texts):
+                key = txt.rstrip('.')[:3]
+                if key in months_map:
+                    month_indices[idx] = months_map[key]
+
+            # DEBUG header
+            # print(f"[DEBUG calendar headers] {header_texts}")
+
+            # Iterate subsequent rows (skip header row)
+            for row in table.find_all('tr')[1:]:
+                cols = row.find_all(['td', 'th'])
+                if not cols:
+                    continue
+                committee = cols[0].get_text(strip=True)
+                if not committee:
+                    continue
+
+                for col_idx, month_num in month_indices.items():
+                    if col_idx >= len(cols):
+                        continue
+                    cell = cols[col_idx]
+                    # extract day numbers from anchors or plain text
+                    days = []
+                    a_tags = cell.find_all('a')
+                    if a_tags:
+                        for a in a_tags:
+                            text = a.get_text(strip=True)
+                            parts = re.findall(r'\d{1,2}', text)
+                            days.extend(parts)
+                    else:
+                        txt = cell.get_text(' ', strip=True)
+                        parts = re.findall(r'\d{1,2}', txt)
+                        days.extend(parts)
+
+                    for part in days:
+                        try:
+                            day = int(part)
+                            dt = datetime(datetime.now().year, month_num, day)
+                        except Exception:
+                            continue
+                        meetings.append({
+                            'title': committee,
+                            'date': dt.strftime('%Y-%m-%d'),
+                            'time': None,
+                            'location': 'Ikke oppgitt',
+                            'kommune': kommune_name,
+                            'raw_text': cell.get_text(strip=True)
+                        })
+
+        # If we found calendar meetings, dedupe, optionally filter for Eigersund, and return
+        if meetings:
+            unique = []
+            seen = set()
+            for m in meetings:
+                key = (m['date'], m['title'], m.get('kommune') or kommune_name)
+                if key not in seen:
+                    seen.add(key)
+                    unique.append(m)
+
+            # If this is Eigersund, filter to today..today+10 days
+            try:
+                if 'eigersund' in (kommune_name or '').lower():
+                    from datetime import datetime, timedelta
+                    today = datetime.now().date()
+                    end_date = today + timedelta(days=10)
+                    filtered = []
+                    for m in unique:
+                        try:
+                            md = datetime.strptime(m['date'], '%Y-%m-%d').date()
+                            if today <= md <= end_date:
+                                filtered.append(m)
+                        except Exception:
+                            continue
+                    return filtered
+            except Exception:
+                pass
+
+            return unique
+
+        # Fallback: generic element scraping
         potential_elements = []
         potential_elements.extend(soup.find_all('tr'))
         potential_elements.extend(soup.find_all('div', class_=re.compile(r'.*møte.*|.*meeting.*|.*event.*', re.I)))
@@ -158,7 +258,7 @@ class PlaywrightMoteParser:
         unique = []
         seen = set()
         for m in meetings:
-            key = (m['date'], m['title'], m['kommune'])
+            key = (m['date'], m['title'], m.get('kommune') or kommune_name)
             if key not in seen:
                 seen.add(key)
                 unique.append(m)
@@ -233,6 +333,77 @@ class PlaywrightMoteParser:
 
         # tables
         tables = soup.find_all('table')
+        # First: detect calendar-style tables where header cells are month names (Jan..Des)
+        months_map = {
+            'jan':1,'januar':1,'feb':2,'februar':2,'mar':3,'mars':3,'apr':4,'april':4,
+            'mai':5,'jun':6,'juni':6,'jul':7,'juli':7,'aug':8,'august':8,'sep':9,'sept':9,'september':9,
+            'okt':10,'oktober':10,'nov':11,'november':11,'des':12,'desember':12
+        }
+        for table in tables:
+            # Use first row as header (handles th or td)
+            first_row = table.find('tr')
+            if not first_row:
+                continue
+            header_cells = first_row.find_all(['th', 'td'])
+            header_texts = [hc.get_text(strip=True).lower() for hc in header_cells]
+            if not any((h and h[:3] in months_map) for h in header_texts):
+                continue
+
+            # Map header column index -> month number
+            month_indices = {}
+            for idx, txt in enumerate(header_texts):
+                key = txt.rstrip('.')[:3]
+                if key in months_map:
+                    month_indices[idx] = months_map[key]
+
+            # DEBUG: show detected headers
+            print(f"[DEBUG Playwright calendar headers] {header_texts}")
+
+            # Iterate subsequent rows (skip header row)
+            for row in table.find_all('tr')[1:]:
+                cols = row.find_all(['td', 'th'])
+                if not cols:
+                    continue
+                committee = cols[0].get_text(strip=True)
+                if not committee:
+                    continue
+
+                for col_idx, month_num in month_indices.items():
+                    if col_idx >= len(cols):
+                        continue
+                    cell = cols[col_idx]
+                    # DEBUG: print cell for the specific committee we're checking
+                    if 'råd for personer' in committee.lower():
+                        print(f"[DEBUG Playwright row] committee={committee} col_idx={col_idx} month={month_num} cell='{cell.get_text(strip=True)}'")
+                    # extract day numbers from anchors or plain text
+                    days = []
+                    a_tags = cell.find_all('a')
+                    if a_tags:
+                        for a in a_tags:
+                            text = a.get_text(strip=True)
+                            parts = re.findall(r'\d{1,2}', text)
+                            days.extend(parts)
+                    else:
+                        txt = cell.get_text(' ', strip=True)
+                        parts = re.findall(r'\d{1,2}', txt)
+                        days.extend(parts)
+
+                    for part in days:
+                        try:
+                            day = int(part)
+                            dt = datetime(datetime.now().year, month_num, day)
+                        except Exception:
+                            continue
+                        meetings.append({
+                            'title': committee,
+                            'date': dt.strftime('%Y-%m-%d'),
+                            'time': None,
+                            'location': 'Ikke oppgitt',
+                            'kommune': kommune_name,
+                            'raw_text': cell.get_text(strip=True)
+                        })
+
+        # Non-calendar table fallback
         for table in tables:
             rows = table.find_all('tr')
             for row in rows:
@@ -475,12 +646,44 @@ async def scrape_with_playwright(kommune_urls: List[Dict]) -> List[Dict]:
             url = cfg.get('url')
             t = cfg.get('type')
             try:
+                # Special-case: if this config is for Eigersund, prefer the dedicated parser
+                # which parses the meeting plan table reliably via requests/BeautifulSoup.
+                if name and 'eigersund' in name.lower():
+                    try:
+                        from eigersund_parser import parse_eigersund_meetings
+                        meetings = parse_eigersund_meetings(url, name, days_ahead=10)
+                        all_meetings.extend(meetings)
+                        print(f"\u2705 {name}: {len(meetings)} m\u00f8ter (via eigersund_parser)")
+                        continue
+                    except Exception:
+                        # fallback to Playwright parsing if dedicated parser fails
+                        pass
+
                 if t == 'elements':
                     meetings = await parser.scrape_elements_cloud(url)
                 elif t == 'onacos':
                     meetings = await parser.scrape_onacos_site(url, name)
                 else:
                     meetings = await parser.scrape_javascript_site(url, name)
+
+                # If this config is for Eigersund, filter meetings to today..today+10 days
+                try:
+                    if name and 'eigersund' in name.lower():
+                        from datetime import datetime, timedelta
+                        today = datetime.now().date()
+                        end_date = today + timedelta(days=10)
+                        filt = []
+                        for m in meetings:
+                            try:
+                                md = datetime.strptime(m['date'], '%Y-%m-%d').date()
+                                if today <= md <= end_date:
+                                    filt.append(m)
+                            except Exception:
+                                continue
+                        meetings = filt
+                except Exception:
+                    pass
+
                 all_meetings.extend(meetings)
                 print(f"✅ {name}: {len(meetings)} møter")
             except Exception as e:

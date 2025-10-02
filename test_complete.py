@@ -6,6 +6,7 @@ Test Playwright-funksjonalitet uten å sende til Slack.
 import os
 import sys
 import asyncio
+import pytest
 
 # Sett test-modus
 os.environ['TESTING'] = 'true'
@@ -45,6 +46,7 @@ def test_standard_scraping():
     print(f"\n📊 Standard scraping totalt: {total_meetings} møter")
     return total_meetings
 
+@pytest.mark.asyncio
 async def test_playwright_scraping():
     """Test Playwright scraping."""
     print("\n🎭 Tester Playwright scraping...")

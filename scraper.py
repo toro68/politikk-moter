@@ -89,6 +89,13 @@ KOMMUNE_URLS = [
     
 ]
 
+# Import Eigersund parser
+try:
+    from eigersund_parser import parse_eigersund_meetings
+    EIGERSUND_AVAILABLE = True
+except Exception:
+    EIGERSUND_AVAILABLE = False
+
 class MoteParser:
     """Parser for møtedata fra kommunale nettsider."""
     
@@ -206,6 +213,15 @@ class MoteParser:
     def parse_onacos_site(self, url: str, kommune_name: str) -> List[Dict]:
         """Parser for Onacos-baserte sider."""
         try:
+            # Special-case: delegate to the dedicated Eigersund parser if this is Eigersund.
+            # This ensures fallback HTML parsing for Eigersund applies the strict
+            # "today..today+10 days" filter (the dedicated parser already does this).
+            try:
+                if EIGERSUND_AVAILABLE and (('eigersund' in (kommune_name or '').lower()) or ('eigersund' in (url or '').lower())):
+                    return parse_eigersund_meetings(url, kommune_name, days_ahead=10)
+            except Exception:
+                # non-fatal: fall through to generic parsing
+                pass
             response = self.session.get(url, timeout=10)
             response.raise_for_status()
             soup = BeautifulSoup(response.content, 'html.parser')
@@ -537,15 +553,24 @@ def scrape_all_meetings() -> List[Dict]:
     if standard_sites:
         parser = MoteParser()
         for kommune_config in standard_sites:
-            print(f"📄 Scraper {kommune_config['name']} (standard)...")
-            
-            if kommune_config['type'] == 'acos':
-                meetings = parser.parse_acos_site(kommune_config['url'], kommune_config['name'])
-            elif kommune_config['type'] == 'custom':
-                meetings = parser.parse_custom_site(kommune_config['url'], kommune_config['name'])
+            # Special-case: Eigersund uses a separate parser
+            if EIGERSUND_AVAILABLE and ('eigersund' in kommune_config.get('url','').lower() or 'eigersund' in kommune_config.get('name','').lower()):
+                try:
+                    print(f"🔎 Spesialparser for {kommune_config['name']}")
+                    meetings = parse_eigersund_meetings(kommune_config['url'], kommune_config['name'])
+                except Exception as e:
+                    print(f"⚠️  Eigersund parser-feil: {e}")
+                    meetings = []
             else:
-                print(f"Ukjent sidetype: {kommune_config['type']}")
-                continue
+                print(f"📄 Scraper {kommune_config['name']} (standard)...")
+
+                if kommune_config['type'] == 'acos':
+                    meetings = parser.parse_acos_site(kommune_config['url'], kommune_config['name'])
+                elif kommune_config['type'] == 'custom':
+                    meetings = parser.parse_custom_site(kommune_config['url'], kommune_config['name'])
+                else:
+                    print(f"Ukjent sidetype: {kommune_config['type']}")
+                    continue
             # Legg på kilde-URL for hvert møte slik at Slack-meldingen kan linke tilbake
             for m in meetings:
                 if 'url' not in m or not m.get('url'):
@@ -583,7 +608,7 @@ def scrape_all_meetings() -> List[Dict]:
     
     return all_meetings
 
-def filter_meetings_by_date_range(meetings: List[Dict], days_ahead: int = 9) -> List[Dict]:
+def filter_meetings_by_date_range(meetings: List[Dict], days_ahead: int = 10) -> List[Dict]:
     """Filtrer møter for dagens dato + angitt antall dager frem."""
     today = datetime.now().date()
     end_date = today + timedelta(days=days_ahead)
@@ -702,7 +727,7 @@ def main():
     print(f"📊 Totalt funnet {len(all_meetings)} møter")
     
     # Filtrer for neste 10 dager
-    filtered_meetings = filter_meetings_by_date_range(all_meetings, days_ahead=9)
+    filtered_meetings = filter_meetings_by_date_range(all_meetings, days_ahead=10)
     print(f"📅 Filtrert til {len(filtered_meetings)} møter for de neste 10 dagene")
     
     # Hvis ingen møter i perioden, bruk mock-data

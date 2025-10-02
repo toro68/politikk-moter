@@ -3,10 +3,18 @@
 Test kommune API-endepunkter som ble funnet.
 """
 
+import pytest
 import requests
 import json
 from bs4 import BeautifulSoup
 
+
+@pytest.mark.parametrize("url", [
+    "https://www.sauda.kommune.no/api/meetings",
+    "https://www.sauda.kommune.no/api/moter",
+    "https://www.strand.kommune.no/api/meetings",
+    "https://www.hjelmeland.kommune.no/api/meetings",
+])
 def test_api_endpoint(url: str):
     """Test et API-endepunkt for å se hva det returnerer."""
     print(f"\n🔍 Testing {url}")
@@ -73,12 +81,13 @@ def main():
         "https://www.sauda.kommune.no/api/meetings",
         "https://www.sauda.kommune.no/api/moter",
         "https://www.strand.kommune.no/api/meetings",
-        "https://www.hjelmeland.kommune.no/api/meetings"
+        "https://www.hjelmeland.kommune.no/api/meetings",
     ]
     
     for endpoint in endpoints:
         test_api_endpoint(endpoint)
         print("\n" + "="*60)
+
 
 if __name__ == '__main__':
     main()
