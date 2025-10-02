@@ -650,7 +650,7 @@ async def scrape_with_playwright(kommune_urls: List[Dict]) -> List[Dict]:
                 # which parses the meeting plan table reliably via requests/BeautifulSoup.
                 if name and 'eigersund' in name.lower():
                     try:
-                        from eigersund_parser import parse_eigersund_meetings
+                        from .eigersund_parser import parse_eigersund_meetings
                         meetings = parse_eigersund_meetings(url, name, days_ahead=10)
                         all_meetings.extend(meetings)
                         print(f"\u2705 {name}: {len(meetings)} m\u00f8ter (via eigersund_parser)")

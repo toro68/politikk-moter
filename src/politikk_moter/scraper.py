@@ -20,7 +20,7 @@ from urllib.parse import urljoin
 
 # Import Playwright scraper for JavaScript-heavy sites
 try:
-    from playwright_scraper import scrape_with_playwright
+    from .playwright_scraper import scrape_with_playwright
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
@@ -28,7 +28,7 @@ except ImportError:
 
 # Import Google Calendar integration
 try:
-    from calendar_integration import get_calendar_meetings
+    from .calendar_integration import get_calendar_meetings
     CALENDAR_AVAILABLE = True
 except ImportError:
     CALENDAR_AVAILABLE = False
@@ -91,7 +91,7 @@ KOMMUNE_URLS = [
 
 # Import Eigersund parser
 try:
-    from eigersund_parser import parse_eigersund_meetings
+    from .eigersund_parser import parse_eigersund_meetings
     EIGERSUND_AVAILABLE = True
 except Exception:
     EIGERSUND_AVAILABLE = False
@@ -600,7 +600,7 @@ def scrape_all_meetings() -> List[Dict]:
     if len(all_meetings) == 0:
         print("\n⚠️  Ingen møter funnet via scraping. Bruker mock-data for demo...")
         try:
-            from mock_data import get_mock_meetings
+            from .mock_data import get_mock_meetings
             all_meetings = get_mock_meetings()
             print(f"Lastet {len(all_meetings)} mock-møter")
         except ImportError:
@@ -734,7 +734,7 @@ def main():
     if len(filtered_meetings) == 0:
         print("\n⚠️  Ingen møter i neste 10-dagers periode. Bruker mock-data...")
         try:
-            from mock_data import get_mock_meetings
+            from .mock_data import get_mock_meetings
             mock_meetings = get_mock_meetings()
             filtered_meetings = filter_meetings_by_date_range(mock_meetings, days_ahead=9)
             print(f"Lastet {len(filtered_meetings)} mock-møter for de neste 10 dagene")

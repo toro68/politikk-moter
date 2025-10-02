@@ -9,12 +9,13 @@ import sys
 import json
 import os
 
-# Sørg for at repo-root er i sys.path slik at vi kan importere scraper.py
+# Sørg for at src/ er i sys.path slik at vi kan importere politikk_moter-pakken
 repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-if repo_root not in sys.path:
-    sys.path.insert(0, repo_root)
+src_dir = os.path.join(repo_root, 'src')
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
 
-from scraper import KOMMUNE_URLS, MoteParser, PLAYWRIGHT_AVAILABLE
+from politikk_moter.scraper import KOMMUNE_URLS, MoteParser, PLAYWRIGHT_AVAILABLE
 
 # Finn Eigersund-konfig
 eigersund_cfg = None
@@ -32,7 +33,7 @@ print(json.dumps(eigersund_cfg, indent=2, ensure_ascii=False))
 
 async def run_playwright(cfg):
     try:
-        from playwright_scraper import scrape_with_playwright
+        from politikk_moter.playwright_scraper import scrape_with_playwright
     except Exception as e:
         print('⚠️  Playwright-scraper ikke tilgjengelig:', e)
         return None
