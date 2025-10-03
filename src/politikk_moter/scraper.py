@@ -1,22 +1,19 @@
 #!/usr/bin/env python3
-"""
-Politiske møter scraper for Slack-notifikasj    {
-        "name": "Rogaland fylkeskommune",
-        "url": "https://prod01.elementscloud.no/publikum/971045698/Dmb",
-        "type": "elements_cloud"
-    }
-Henter møtedata fra kommunale nettsider og sender daglig sammendrag til Slack.
-"""
+"""Scraper for politiske møter og Slack-notifikasjoner."""
+
+import asyncio
+import os
+import re
+import sys
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Sequence
+from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup
-import re
-from datetime import datetime, timedelta
-from typing import List, Dict, Optional
-import os
-import sys
-import asyncio
-from urllib.parse import urljoin
+
+from .kommuner import get_default_kommune_configs, get_kommune_configs
+from .pipeline_config import PipelineConfig, get_pipeline_configs
 
 # Import Playwright scraper for JavaScript-heavy sites
 try:
@@ -28,66 +25,16 @@ except ImportError:
 
 # Import Google Calendar integration
 try:
-    from .calendar_integration import get_calendar_meetings
+    from .calendar_integration import get_calendar_meetings, get_calendar_meetings_for_sources
     CALENDAR_AVAILABLE = True
 except ImportError:
     CALENDAR_AVAILABLE = False
+    get_calendar_meetings = None  # type: ignore[assignment]
+    get_calendar_meetings_for_sources = None  # type: ignore[assignment]
     print("⚠️  Google Calendar-integrasjon ikke tilgjengelig.")
 
-# Konfigurasjon av kilde-URLer
-KOMMUNE_URLS = [
-    {
-        "name": "Sauda kommune",
-        "url": "https://www.sauda.kommune.no/innsyn/politiske-moter/",
-        "type": "acos"
-    },
-    {
-        "name": "Strand kommune",
-        "url": "https://www.strand.kommune.no/tjenester/politikk-innsyn-og-medvirkning/politiske-moter-og-sakspapirer/politisk-motekalender/",
-        "type": "acos"
-    },
-    {
-        "name": "Suldal kommune", 
-        "url": "https://www.suldal.kommune.no/innsyn/politiske-moter/",
-        "type": "acos"
-    },
-    {
-        "name": "Hjelmeland kommune",
-        "url": "https://www.hjelmeland.kommune.no/politikk/moteplan-og-sakspapir/innsyn-moteplan/",
-        "type": "acos"
-    },
-    {
-        "name": "Sirdal kommune",
-        "url": "https://innsynpluss.onacos.no/sirdal/moteoversikt/",
-        "type": "onacos"
-    },
-    {
-        "name": "Rogaland fylkeskommune",
-        "url": "https://prod01.elementscloud.no/publikum/971045698/Dmb",
-        "type": "elements"
-    },
-    {
-        "name": "Sokndal kommune",
-        "url": "https://www.sokndal.kommune.no/innsyn/moteoversikt/",
-        "type": "acos"
-    },
-    {
-        "name": "Bjerkreim kommune",
-        "url": "https://www.bjerkreim.kommune.no/innsyn/moteplan-og-sakslister/",
-        "type": "acos"
-    },
-    {
-        "name": "Bymiljøpakken",
-        "url": "https://bymiljopakken.no/moter/",
-        "type": "custom"
-    },
-    {
-        "name": "Eigersund kommune",
-        "url": "https://innsyn.onacos.no/eigersund/mote/wfinnsyn.ashx?response=moteplan&",
-        "type": "onacos"
-    },
-    
-]
+# Konfigurasjon av kilde-URLer (beholder globalt navn for bakoverkompatibilitet i tester)
+KOMMUNE_URLS = get_default_kommune_configs()
 
 # Import Eigersund parser
 try:
@@ -348,6 +295,9 @@ class MoteParser:
             response.raise_for_status()
             soup = BeautifulSoup(response.content, 'html.parser')
             
+            if 'klepp' in kommune_name.lower():
+                return self._parse_klepp_meetings(soup, url, kommune_name)
+
             meetings = []
             
             # For Bymiljøpakken og lignende - søk bredt
@@ -376,11 +326,78 @@ class MoteParser:
         except Exception as e:
             print(f"Feil ved parsing av {kommune_name}: {e}")
             return []
+
+    def _parse_klepp_meetings(self, soup: BeautifulSoup, base_url: str, kommune_name: str) -> List[Dict]:
+        """Klepp kommune bruker 360online med tydelig møte-liste."""
+        meetings: List[Dict] = []
+
+        for link in soup.select('a[href*="/Meetings/Details/"]'):
+            meeting_name = link.select_one('.meetingName')
+            date_spans = link.select('.meetingDate span')
+
+            if not meeting_name or not date_spans:
+                continue
+
+            raw_title = meeting_name.get_text(' ', strip=True)
+            title = re.sub(r"\s*\([^)]*\)\s*$", "", raw_title).strip()
+            if not title:
+                continue
+
+            meeting_date = None
+            meeting_time = None
+            for candidate in date_spans:
+                text = candidate.get_text(' ', strip=True)
+                if not text:
+                    continue
+                if meeting_date is None:
+                    parsed_date = self.parse_date_from_text(text)
+                    if parsed_date:
+                        meeting_date = parsed_date
+                        continue
+                if meeting_time is None:
+                    parsed_time = self.parse_time_from_text(text)
+                    if parsed_time:
+                        meeting_time = parsed_time
+
+            if not meeting_date:
+                continue
+
+            meeting_url = urljoin(base_url, link.get('href', ''))
+
+            meetings.append({
+                'title': title,
+                'date': meeting_date.strftime('%Y-%m-%d'),
+                'time': meeting_time,
+                'location': 'Ikke oppgitt',
+                'kommune': kommune_name,
+                'url': meeting_url,
+                'raw_text': link.get_text(' ', strip=True)[:300],
+            })
+
+        unique: List[Dict] = []
+        seen = set()
+        for meeting in meetings:
+            key = (meeting['date'], meeting['title'])
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(meeting)
+
+        return unique
     
     def _extract_meeting_from_element(self, element, kommune_name: str) -> Optional[Dict]:
         """Ekstraherer møteinfo fra HTML-element."""
         try:
             text = element.get_text(strip=True)
+            if text:
+                # Hopp over elementer som kun inneholder dato/tid (f.eks. separate kolonner i Sandnes-visningen)
+                alnum_text = re.sub(r"\s+", "", text)
+                if not re.search(r"[A-Za-zÆØÅæøå]", text):
+                    # Støtte for format som 02.10.2025 16:00 eller 02.10.202516:00
+                    if re.search(r"\d{1,2}[\.\-/]\d{1,2}[\.\-/]\d{2,4}", text) and re.search(r"\d{1,2}[:\.]\d{2}", text):
+                        return None
+                    if re.fullmatch(r"\d{6,}", alnum_text):
+                        return None
 
             # Bygg liste av kandidat-tekster: synlig tekst + aria-label/title fra element og barn
             candidate_texts = [text]
@@ -523,26 +540,39 @@ class MoteParser:
             print(f"Feil ved ekstraksjon av møtedata: {e}")
             return None
 
-def scrape_all_meetings() -> List[Dict]:
-    """Scraper alle møter fra alle konfigurerte kommuner og Google Calendar."""
-    all_meetings = []
-    
+def scrape_all_meetings(
+    kommune_configs: Optional[Sequence[Dict]] = None,
+    calendar_sources: Optional[Sequence[str]] = None,
+) -> List[Dict]:
+    """Scraper møter for angitte kommuner og kalendere."""
+    all_meetings: List[Dict] = []
+
+    kommuner = list(kommune_configs) if kommune_configs is not None else get_default_kommune_configs()
+    aktive_kalendere: Sequence[str] = tuple(calendar_sources or ("arrangementer_sa",))
+    debug_mode = "--debug" in sys.argv or "--test" in sys.argv
+
     # Hent møter fra Google Calendar først
-    if CALENDAR_AVAILABLE:
+    if CALENDAR_AVAILABLE and aktive_kalendere:
         print("📅 Henter møter fra Google Calendar...")
         try:
-            debug_mode = '--debug' in sys.argv or '--test' in sys.argv
-            calendar_meetings = get_calendar_meetings(days_ahead=9, test_mode=debug_mode)
+            if 'get_calendar_meetings_for_sources' in globals() and callable(get_calendar_meetings_for_sources):  # type: ignore[name-defined]
+                calendar_meetings = get_calendar_meetings_for_sources(
+                    aktive_kalendere,
+                    days_ahead=9,
+                    test_mode=debug_mode,
+                )
+            else:
+                calendar_meetings = get_calendar_meetings(days_ahead=9, test_mode=debug_mode)  # type: ignore[misc]
             all_meetings.extend(calendar_meetings)
             print(f"Fant {len(calendar_meetings)} møter fra Google Calendar")
         except Exception as e:
             print(f"⚠️  Google Calendar-feil: {e}")
-    
+
     # Separer sider basert på om de trenger Playwright
-    js_heavy_sites = []
-    standard_sites = []
-    
-    for kommune_config in KOMMUNE_URLS:
+    js_heavy_sites: List[Dict] = []
+    standard_sites: List[Dict] = []
+
+    for kommune_config in kommuner:
         # ACOS/Onacos/Elements og andre JS-baserte innsynsider trenger Playwright
         if kommune_config['type'] in ['elements', 'onacos', 'acos'] or 'innsynpluss' in kommune_config['url']:
             js_heavy_sites.append(kommune_config)
@@ -670,7 +700,90 @@ def format_slack_message(meetings: List[Dict]) -> str:
     
     return message
 
-def send_to_slack(message: str, force_send: bool = False) -> bool:
+
+def _fallback_meetings(days_ahead: int) -> List[Dict]:
+    try:
+        from .mock_data import get_mock_meetings
+
+        mock_meetings = get_mock_meetings()
+        return filter_meetings_by_date_range(mock_meetings, days_ahead=days_ahead)
+    except ImportError:
+        print("Mock-data ikke tilgjengelig")
+        return []
+
+
+def collect_meetings_for_pipeline(
+    pipeline: PipelineConfig,
+    *,
+    days_ahead: int,
+) -> List[Dict]:
+    kommune_configs = get_kommune_configs(pipeline.kommune_groups)
+    if not kommune_configs and not pipeline.calendar_sources:
+        print(f"⚠️  Pipeline {pipeline.key} har ingen kilder definert – hopper over")
+        return []
+
+    meetings = scrape_all_meetings(
+        kommune_configs,
+        pipeline.calendar_sources,
+    )
+    filtered_meetings = filter_meetings_by_date_range(meetings, days_ahead=days_ahead)
+
+    if filtered_meetings:
+        return filtered_meetings
+
+    print(f"⚠️  Pipeline {pipeline.key} fant ingen møter i perioden. Bruker mock-data...")
+    return _fallback_meetings(days_ahead)
+
+
+def run_pipeline(
+    pipeline: PipelineConfig,
+    *,
+    days_ahead: int = 10,
+    force_send: bool = False,
+    debug_mode: bool = False,
+) -> bool:
+    print(f"\n🚀 Kjører pipeline '{pipeline.key}': {pipeline.description}")
+
+    meetings = collect_meetings_for_pipeline(
+    pipeline,
+    days_ahead=days_ahead,
+    )
+
+    slack_message = format_slack_message(meetings)
+
+    if debug_mode:
+        print("🎭 DEBUG-MODUS: Viser Slack-melding uten å sende")
+        print("=" * 50)
+        print(slack_message)
+        print("=" * 50)
+        return True
+
+    resolved_webhook = os.getenv(pipeline.slack_webhook_env)
+    if not resolved_webhook:
+        message = (
+            f"ℹ️  Miljøvariabelen {pipeline.slack_webhook_env} er ikke satt. "
+            f"Hopper over sending for pipeline {pipeline.key}."
+        )
+        print(message)
+        return not force_send
+
+    slack_success = send_to_slack(
+        slack_message,
+        force_send=force_send,
+        webhook_env=pipeline.slack_webhook_env,
+        webhook_url=resolved_webhook,
+    )
+    if not slack_success:
+        print(f"❌ Slack-sending feilet for pipeline {pipeline.key}")
+    return slack_success
+
+def send_to_slack(
+    message: str,
+    force_send: bool = False,
+    *,
+    webhook_env: str = "SLACK_WEBHOOK_URL",
+    webhook_url: Optional[str] = None,
+) -> bool:
     """
     Send melding til Slack via webhook.
     
@@ -678,9 +791,9 @@ def send_to_slack(message: str, force_send: bool = False) -> bool:
         message: Slack-melding som skal sendes
         force_send: Hvis True, send melding selv i test-modus
     """
-    webhook_url = os.getenv('SLACK_WEBHOOK_URL')
-    if not webhook_url:
-        print("SLACK_WEBHOOK_URL environment variable ikke satt")
+    resolved_webhook = webhook_url or os.getenv(webhook_env)
+    if not resolved_webhook:
+        print(f"{webhook_env} environment variable ikke satt")
         return False
     
     # Sjekk om vi er i test-modus (hindrer utilsiktet sending)
@@ -692,7 +805,8 @@ def send_to_slack(message: str, force_send: bool = False) -> bool:
     
     if is_test_mode and not force_send:
         print("🚫 Test-modus: Sender IKKE til Slack (bruk --force for å overstyre)")
-        print(f"Webhook URL: {webhook_url[:50]}...")
+        if resolved_webhook:
+            print(f"Webhook URL: {resolved_webhook[:50]}...")
         print("Melding som VILLE blitt sendt:")
         print("=" * 40)
         print(message)
@@ -706,7 +820,7 @@ def send_to_slack(message: str, force_send: bool = False) -> bool:
     }
     
     try:
-        response = requests.post(webhook_url, json=payload, timeout=10)
+        response = requests.post(resolved_webhook, json=payload, timeout=10)
         response.raise_for_status()
         print("✅ Melding sendt til Slack!")
         return True
@@ -718,57 +832,26 @@ def main():
     """Hovedfunksjon."""
     print("🏛️  Starter scraping av politiske møter...")
     
-    # Sjekk for force-send flag
     force_send = '--force' in sys.argv
     debug_mode = '--debug' in sys.argv or '--test' in sys.argv
-    
-    # Scrape møter (inkluderer nå Google Calendar automatisk)
-    all_meetings = scrape_all_meetings()
-    print(f"📊 Totalt funnet {len(all_meetings)} møter")
-    
-    # Filtrer for neste 10 dager
-    filtered_meetings = filter_meetings_by_date_range(all_meetings, days_ahead=10)
-    print(f"📅 Filtrert til {len(filtered_meetings)} møter for de neste 10 dagene")
-    
-    # Hvis ingen møter i perioden, bruk mock-data
-    if len(filtered_meetings) == 0:
-        print("\n⚠️  Ingen møter i neste 10-dagers periode. Bruker mock-data...")
-        try:
-            from .mock_data import get_mock_meetings
-            mock_meetings = get_mock_meetings()
-            filtered_meetings = filter_meetings_by_date_range(mock_meetings, days_ahead=9)
-            print(f"Lastet {len(filtered_meetings)} mock-møter for de neste 10 dagene")
-        except ImportError:
-            print("Mock-data ikke tilgjengelig")
-    
-    # Debug output
-    if debug_mode:
-        print("\n🔍 Debug - funnet møter:")
-        for meeting in filtered_meetings:
-            print(f"  📅 {meeting['date']} {meeting['time'] or 'ukjent tid'} - {meeting['title']} ({meeting['kommune']})")
-        print()
-    
-    # Lag Slack-melding
-    slack_message = format_slack_message(filtered_meetings)
-    
-    # Send til Slack (med sikkerhet mot utilsiktet sending)
-    slack_success = False
-    if debug_mode:
-        print("🎭 DEBUG-MODUS: Viser Slack-melding uten å sende")
-        print("=" * 50)
-        print(slack_message)
-        print("=" * 50)
-        print("\nFor å sende til Slack:")
-        print("  python scraper.py --force")
-        print("  ELLER sett TESTING=false")
-        slack_success = True  # Behandle som vellykket i debug-modus
-    else:
-        slack_success = send_to_slack(slack_message, force_send=force_send)
-        if not slack_success:
-            print("❌ Slack-sending feilet")
-    
-    # Exit med feilkode hvis noe feilet (kun i produksjon)
-    if not debug_mode and not slack_success:
+    days_ahead = 10
+
+    pipelines = get_pipeline_configs()
+    if not pipelines:
+        print("⚠️  Ingen pipeline-konfigurasjoner funnet. Ingenting å gjøre.")
+        return
+
+    overall_success = True
+    for pipeline in pipelines:
+        success = run_pipeline(
+            pipeline,
+            days_ahead=days_ahead,
+            force_send=force_send,
+            debug_mode=debug_mode,
+        )
+        overall_success = overall_success and success
+
+    if not debug_mode and not overall_success:
         sys.exit(1)
 
 if __name__ == '__main__':

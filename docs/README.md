@@ -13,6 +13,7 @@ Automatisk scraping og daglige Slack-meldinger for politiske møter fra kommuner
   - ✅ Bymiljøpakken.no (106 møter funnet)
   - ✅ Rogaland fylkeskommune via Elements Cloud (8 møter funnet)
   - ✅ Alle kommunesider (standard ACOS/Onacos-støtte)
+- **Konfigurerbare pipelines**: Flere Slack-kanaler kan ha egne kommuner og kalendere
 
 ### 📊 Nåværende resultater
 ```
@@ -121,8 +122,9 @@ python playwright_scraper.py
 
 1. Gå til repository → Settings → Secrets and variables → Actions
 2. Legg til ny secret:
-   - Name: `SLACK_WEBHOOK_URL`
-   - Value: Din webhook URL fra Slack
+  - Name: `SLACK_WEBHOOK_URL`
+  - Value: Din webhook URL fra Slack
+3. (Valgfritt) Gjenta for ekstra pipelines definert i `pipeline_config.py`, f.eks. `SLACK_WEBHOOK_URL_UTVIDET`
 
 ### 3. Aktivering
 
@@ -185,15 +187,11 @@ Workflow kjører:
 
 ### Legge til flere kommuner
 
-Rediger `KOMMUNE_URLS` i `scraper.py`:
+Oppdater `KOMMUNE_CONFIGS` i `src/politikk_moter/kommuner.py` og legg kommunen inn i riktig gruppe (`core`, `extended`, osv.). Nye kommuner blir tilgjengelige for alle pipelines som peker på gruppen.
 
-```python
-KOMMUNE_URLS.append({
-    "name": "Din kommune",
-    "url": "https://kommune.no/møter/",
-    "type": "acos"  # eller "onacos"
-})
-```
+### Ny Slack-kanal / pipeline
+
+Legg til en ny `PipelineConfig` i `src/politikk_moter/pipeline_config.py`. Velg hvilke kommunegrupper og kalendere som skal inngå, og sett miljøvariabelen for tilhørende Slack-webhook.
 
 ### Endre tidsplan
 

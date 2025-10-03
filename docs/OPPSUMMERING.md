@@ -7,6 +7,7 @@
 - **Mock-data fallback** basert på ekte møtedata fra kommunene
 - **GitHub Actions workflow** som kjører daglig kl. 08:00
 - **Slack-integrasjon** med formaterte møteoversikter
+- **Pipeline-konfigurasjon** for flere Slack-kanaler med ulike kommune- og kalenderutvalg
 - **Robust parsing** av møtedata (tittel, dato, tid, sted)
 
 ### Filstruktur
@@ -66,6 +67,7 @@ Torsdag 21. august 2025
 2. **RSS-søk**: Finne alternative datakilder
 3. **Manuell oppdatering**: Periodisk oppdatering av `mock_data.py`
 4. **Google Calendar**: API-integrasjon for kalender-events
+5. **Flere pipelines**: Legg til nye Slack-kanaler ved å utvide `pipeline_config.py` (egen kalender/webhook per kanal)
 
 ## 📋 Implementerte funksjoner
 

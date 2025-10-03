@@ -7,21 +7,36 @@ import os
 import json
 import tempfile
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional, Sequence
 from google.auth.transport.requests import Request
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-# Kalender-ID for politiske møter
+# Kalender-ID for politiske møter (tidligere standard)
 CALENDAR_ID = "c_635df6a653ea35ad30afe385c7271817d5e0b664b38d65aa08642226f7b5e355@group.calendar.google.com"
+
+# Registrer tilgjengelige kalendrer. Flere kan legges til ved å oppdatere dette oppslaget.
+CALENDAR_SOURCES: Dict[str, Dict[str, Optional[str]]] = {
+    "arrangementer_sa": {
+        "calendar_id": CALENDAR_ID,
+        "description": "Arrangementer i Stavanger Aftenblad sin kalender",
+    },
+    "regional_kultur": {
+        # Tillat at kalender-ID hentes fra miljøvariabel for fleksibilitet.
+        "env": "GOOGLE_CALENDAR_REGIONAL_KULTUR_ID",
+        "description": "Regional kulturkalender (eksempel)",
+    },
+}
 
 class GoogleCalendarIntegration:
     """Håndterer Google Calendar API-integrasjon."""
     
-    def __init__(self):
+    def __init__(self, calendar_id: str):
         self.service = None
         self.calendar_id = CALENDAR_ID
+        if calendar_id:
+            self.calendar_id = calendar_id
         
     def authenticate(self) -> bool:
         """Autentiser med Google Calendar API via service account."""
@@ -289,11 +304,71 @@ def get_calendar_meetings(days_ahead: int = 9, test_mode: bool = False) -> List[
             }
         ]
     
-    calendar_integration = GoogleCalendarIntegration()
+    calendar_integration = GoogleCalendarIntegration(CALENDAR_ID)
     if not calendar_integration.authenticate():
         return []
     
     return calendar_integration.get_calendar_meetings(days_ahead)
+
+
+def _resolve_calendar_id(source_id: str) -> Optional[str]:
+    source = CALENDAR_SOURCES.get(source_id)
+    if not source:
+        print(f"⚠️  Ukjent kalender-kilde: {source_id}")
+        return None
+
+    calendar_id = source.get("calendar_id")
+    if calendar_id:
+        return calendar_id
+
+    env_name = source.get("env")
+    if env_name:
+        env_value = os.getenv(env_name, "").strip()
+        if env_value:
+            return env_value
+        print(f"⚠️  Kalender-ID ikke satt for {source_id}. Sett miljøvariabelen {env_name}.")
+    return None
+
+
+def get_calendar_meetings_for_sources(
+    source_ids: Sequence[str],
+    *,
+    days_ahead: int = 9,
+    test_mode: bool = False,
+) -> List[Dict]:
+    """Hent møter fra én eller flere kalenderkilder."""
+    if test_mode:
+        print("🧪 TEST-MODUS: Google Calendar-lesing (flere kilder)")
+        from datetime import datetime, timedelta
+
+        today = datetime.now().date()
+        meetings: List[Dict] = []
+        for idx, source_id in enumerate(source_ids or ["arrangementer_sa"]):
+            meetings.append(
+                {
+                    "title": f"Test calendar-møte ({source_id})",
+                    "date": (today + timedelta(days=idx + 1)).strftime("%Y-%m-%d"),
+                    "time": "14:00",
+                    "location": "Kontoret",
+                    "kommune": "Manuelt lagt til",
+                    "url": "https://calendar.google.com/calendar",
+                    "raw_text": f"Google Calendar ({source_id})",
+                }
+            )
+        return meetings
+
+    meetings: List[Dict] = []
+    for source_id in source_ids:
+        calendar_id = _resolve_calendar_id(source_id)
+        if not calendar_id:
+            continue
+
+        calendar_integration = GoogleCalendarIntegration(calendar_id)
+        if not calendar_integration.authenticate():
+            continue
+
+        meetings.extend(calendar_integration.get_calendar_meetings(days_ahead))
+    return meetings
 
 def main():
     """Test Google Calendar-integrasjon."""

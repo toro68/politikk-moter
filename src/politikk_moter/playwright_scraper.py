@@ -3,12 +3,14 @@
 Playwright-basert scraper for JavaScript-tunge kommunesider.
 """
 
+# pylint: disable=broad-exception-caught
+
 import asyncio
 from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 import re
 from urllib.parse import urljoin
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 
 
@@ -16,6 +18,8 @@ class PlaywrightMoteParser:
     def __init__(self):
         self.browser = None
         self.context = None
+        self.playwright = None
+        self._current_base_url: str = ""
 
     async def __aenter__(self):
         self.playwright = await async_playwright().start()
@@ -37,6 +41,7 @@ class PlaywrightMoteParser:
         try:
             print(f"🎭 Playwright: Scraper {kommune_name}...")
             page = await self.context.new_page()
+            self._current_base_url = url
             await page.goto(url, wait_until='networkidle', timeout=30000)
             await page.wait_for_timeout(2500)
             content = await page.content()
@@ -47,6 +52,8 @@ class PlaywrightMoteParser:
         except Exception as e:
             print(f"Playwright feil for {kommune_name}: {e}")
             return []
+        finally:
+            self._current_base_url = ""
 
     def _normalize_time_str(self, hh: str, mm: str) -> Optional[str]:
         try:
@@ -57,10 +64,12 @@ class PlaywrightMoteParser:
             return None
         return None
 
-    async def scrape_elements_cloud(self, url: str) -> List[Dict]:
+    async def scrape_elements_cloud(self, url: str, kommune_name: Optional[str] = None) -> List[Dict]:
         try:
-            print(f"🎭 Playwright Elements Cloud: {url}")
+            kommune_label = kommune_name or url
+            print(f"🎭 Playwright Elements Cloud: {kommune_label}")
             page = await self.context.new_page()
+            self._current_base_url = url
             await page.goto(url, wait_until='networkidle', timeout=30000)
             await page.wait_for_timeout(4000)
             try:
@@ -69,7 +78,7 @@ class PlaywrightMoteParser:
                 pass
             content = await page.content()
             soup = BeautifulSoup(content, 'html.parser')
-            meetings = self._extract_elements_meetings(soup)
+            meetings = self._extract_elements_meetings(soup, kommune_label)
 
             # For meetings without explicit time, try opening the meeting detail pages
             for meeting in meetings:
@@ -124,11 +133,14 @@ class PlaywrightMoteParser:
         except Exception as e:
             print(f"Elements Cloud Playwright feil: {e}")
             return []
+        finally:
+            self._current_base_url = ""
 
     async def scrape_onacos_site(self, url: str, kommune_name: str) -> List[Dict]:
         try:
             print(f"🎭 Playwright Onacos: {kommune_name}")
             page = await self.context.new_page()
+            self._current_base_url = url
             await page.goto(url, wait_until='networkidle', timeout=30000)
             await page.wait_for_timeout(4000)
             content = await page.content()
@@ -139,9 +151,20 @@ class PlaywrightMoteParser:
         except Exception as e:
             print(f"Onacos Playwright feil for {kommune_name}: {e}")
             return []
+        finally:
+            self._current_base_url = ""
 
     def _extract_meetings_from_soup(self, soup: BeautifulSoup, kommune_name: str) -> List[Dict]:
         meetings = []
+
+        # Først: nye innsyn-komponenter med bc-content-list
+        bc_meetings = self._extract_bc_content_list_meetings(
+            soup,
+            kommune_name,
+            base_url=self._current_base_url,
+        )
+        if bc_meetings:
+            return bc_meetings
 
         # First: try to parse calendar-style tables where header cells are month names (Jan..Des)
         tables = soup.find_all('table')
@@ -224,7 +247,6 @@ class PlaywrightMoteParser:
             # If this is Eigersund, filter to today..today+10 days
             try:
                 if 'eigersund' in (kommune_name or '').lower():
-                    from datetime import datetime, timedelta
                     today = datetime.now().date()
                     end_date = today + timedelta(days=10)
                     filtered = []
@@ -264,8 +286,180 @@ class PlaywrightMoteParser:
                 unique.append(m)
         return unique
 
-    def _extract_elements_meetings(self, soup: BeautifulSoup) -> List[Dict]:
+    def _parse_date_string(self, text: Optional[str]) -> Optional[datetime]:
+        if not text:
+            return None
+        text = text.strip()
+        if not text:
+            return None
+
+        # dd.mm.yyyy or dd.mm.yy
+        m = re.search(r"(\d{1,2})[\./-](\d{1,2})[\./-](\d{2,4})", text)
+        if m:
+            day, month, year = m.groups()
+            year_int = int(year)
+            if year_int < 100:
+                year_int += 2000
+            try:
+                return datetime(year_int, int(month), int(day))
+            except Exception:
+                return None
+
+        # dd month yyyy (Norwegian)
+        m2 = re.search(r"(\d{1,2})\.?\s+([A-Za-zæøåÆØÅ\.]{3,})\s+(\d{4})", text)
+        if m2:
+            day = int(m2.group(1))
+            mon_str = m2.group(2).lower().rstrip('.')
+            year = int(m2.group(3))
+            months = {
+                'jan': 1, 'januar': 1, 'feb': 2, 'februar': 2,
+                'mar': 3, 'mars': 3, 'apr': 4, 'april': 4,
+                'mai': 5, 'jun': 6, 'juni': 6, 'jul': 7, 'juli': 7,
+                'aug': 8, 'august': 8, 'sep': 9, 'sept': 9, 'september': 9,
+                'okt': 10, 'oktober': 10, 'nov': 11, 'november': 11,
+                'des': 12, 'desember': 12,
+            }
+            month = months.get(mon_str[:3]) or months.get(mon_str)
+            if month:
+                try:
+                    return datetime(year, month, day)
+                except Exception:
+                    return None
+        return None
+
+    def _extract_time_from_text(self, text: Optional[str]) -> Optional[str]:
+        if not text:
+            return None
+        match = re.search(r"(\d{1,2}):(\d{2})", text)
+        if match:
+            return self._normalize_time_str(*match.groups())
+        match = re.search(r"(?:kl\.?\s*)(\d{1,2})(?:[\.:](\d{2}))?", text, re.IGNORECASE)
+        if match:
+            hour = match.group(1)
+            minute = match.group(2) or "00"
+            return self._normalize_time_str(hour, minute)
+        return None
+
+    def _extract_bc_content_list_meetings(
+        self,
+        soup: BeautifulSoup,
+        kommune_name: str,
+        base_url: Optional[str] = None,
+    ) -> List[Dict]:
+        items = soup.select('.bc-content-list-item')
+        if not items:
+            return []
+
+        resolved_base = (base_url or self._current_base_url or '').strip()
+
         meetings: List[Dict] = []
+        for item in items:
+            anchor_el = item.select_one('.bc-content-teaser-title a')
+            title_container = item.select_one('.bc-content-teaser-title')
+            title_source = anchor_el or title_container
+            if not title_source:
+                continue
+            title_text = title_source.get_text(' ', strip=True)
+            if not title_text:
+                continue
+
+            date_container = item.select_one('._meetingDate_mqsmx_38')
+            candidate_date_text = date_container.get_text(' ', strip=True) if date_container else ''
+
+            if candidate_date_text and '-' in candidate_date_text:
+                candidate_date_text = candidate_date_text.split('-')[0].strip()
+
+            # Reconstruct day/month/year when split into separate divs
+            if date_container:
+                day_el = date_container.select_one('._meetingDateDay_mqsmx_50')
+                month_text = None
+                year_text = None
+                if day_el:
+                    for div in date_container.find_all('div'):
+                        text = div.get_text(' ', strip=True)
+                        classes = div.get('class') or []
+                        if not text:
+                            continue
+                        if '_meetingDateDay_mqsmx_50' in classes:
+                            continue
+                        if 'innsyn-header-hidden' in classes:
+                            year_text = text
+                        elif text != '-':
+                            month_text = text
+                    day_text = day_el.get_text(strip=True).strip('. ')
+                    parts = [part for part in (day_text, month_text, year_text) if part]
+                    if parts:
+                        candidate_date_text = ' '.join(parts)
+
+            if not candidate_date_text:
+                aria_label = anchor_el.get('aria-label') if anchor_el else None
+                candidate_date_text = aria_label or item.get_text(' ', strip=True)
+
+            meeting_date = self._parse_date_string(candidate_date_text)
+            if not meeting_date:
+                continue
+
+            meta_map: Dict[str, str] = {}
+            for meta in item.select('.bc-content-teaser-meta-property'):
+                label = meta.select_one('.bc-content-teaser-meta-property-label')
+                value = meta.select_one('.bc-content-teaser-meta-property-value')
+                if label and value:
+                    key = label.get_text(strip=True).lower()
+                    meta_map[key] = value.get_text(' ', strip=True)
+
+            meeting_time = None
+            for time_key in ('tid', 'tidspunkt', 'klokkeslett'):
+                if time_key in meta_map:
+                    meeting_time = self._extract_time_from_text(meta_map[time_key])
+                    if meeting_time:
+                        break
+            if not meeting_time and anchor_el and anchor_el.has_attr('aria-label'):
+                meeting_time = self._extract_time_from_text(anchor_el['aria-label'])
+
+            location = None
+            for loc_key in ('stad', 'stad:', 'stad/sted', 'sted'):
+                if loc_key in meta_map and meta_map[loc_key].strip():
+                    location = meta_map[loc_key]
+                    break
+            if location:
+                location = location.strip()
+
+            meeting = {
+                'title': title_text[:100],
+                'date': meeting_date.strftime('%Y-%m-%d'),
+                'time': meeting_time,
+                'location': (location or 'Ikke oppgitt')[:50],
+                'kommune': kommune_name,
+                'raw_text': item.get_text(' ', strip=True)[:300],
+            }
+
+            if anchor_el and anchor_el.has_attr('href'):
+                href = anchor_el['href']
+                try:
+                    meeting['url'] = urljoin(resolved_base, href)
+                except Exception:
+                    meeting['url'] = href
+            elif resolved_base:
+                meeting['url'] = resolved_base
+            else:
+                meeting['url'] = ''
+
+            meetings.append(meeting)  # type: ignore[list-item]
+
+        unique: List[Dict] = []
+        seen = set()
+        for meeting in meetings:
+            key = (meeting['date'], meeting['title'])
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(meeting)  # type: ignore[arg-type]
+
+        return unique
+
+    def _extract_elements_meetings(self, soup: BeautifulSoup, kommune_name: Optional[str] = None) -> List[Dict]:
+        meetings: List[Dict] = []
+        kommune_label = kommune_name or 'Rogaland fylkeskommune'
 
         def _parse_date_string(s: str) -> Optional[str]:
             if not s:
@@ -399,7 +593,7 @@ class PlaywrightMoteParser:
                             'date': dt.strftime('%Y-%m-%d'),
                             'time': None,
                             'location': 'Ikke oppgitt',
-                            'kommune': kommune_name,
+                            'kommune': kommune_label,
                             'raw_text': cell.get_text(strip=True)
                         })
 
@@ -410,7 +604,7 @@ class PlaywrightMoteParser:
                 cells = row.find_all(['td', 'th'])
                 row_text = ' '.join([c.get_text(strip=True) for c in cells])
                 if len(row_text) > 15 and re.search(r'\d{1,2}[\./-]\d{1,2}[\./-]202[4-6]', row_text):
-                    meeting = self._extract_meeting_from_element(row, 'Rogaland fylkeskommune')
+                    meeting = self._extract_meeting_from_element(row, kommune_label)
                     if meeting and len(meeting['title']) > 3:
                         meetings.append(meeting)
 
@@ -488,7 +682,7 @@ class PlaywrightMoteParser:
                     'date': meeting_date_str,
                     'time': meeting_time or 'TBD',
                     'location': 'Ikke oppgitt',
-                    'kommune': 'Rogaland fylkeskommune',
+                    'kommune': kommune_label,
                     'href': href
                 }
                 meetings.append(meeting)
@@ -503,7 +697,7 @@ class PlaywrightMoteParser:
             if (len(text) > 20 and
                 re.search(r'\d{1,2}[\./-]\d{1,2}[\./-]202[4-6]', text) and
                 re.search(r'(møte|meeting|utvalg|styre|råd|nemnd|formannskap|kommunestyre)', text, re.I)):
-                meeting = self._extract_meeting_from_element(c, 'Rogaland fylkeskommune')
+                meeting = self._extract_meeting_from_element(c, kommune_label)
                 if meeting and len(meeting['title']) > 3:
                     meetings.append(meeting)
 
@@ -660,7 +854,7 @@ async def scrape_with_playwright(kommune_urls: List[Dict]) -> List[Dict]:
                         pass
 
                 if t == 'elements':
-                    meetings = await parser.scrape_elements_cloud(url)
+                    meetings = await parser.scrape_elements_cloud(url, name)
                 elif t == 'onacos':
                     meetings = await parser.scrape_onacos_site(url, name)
                 else:
@@ -669,7 +863,6 @@ async def scrape_with_playwright(kommune_urls: List[Dict]) -> List[Dict]:
                 # If this config is for Eigersund, filter meetings to today..today+10 days
                 try:
                     if name and 'eigersund' in name.lower():
-                        from datetime import datetime, timedelta
                         today = datetime.now().date()
                         end_date = today + timedelta(days=10)
                         filt = []
