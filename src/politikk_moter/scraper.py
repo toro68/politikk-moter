@@ -656,6 +656,28 @@ def filter_meetings_by_date_range(meetings: List[Dict], days_ahead: int = 10) ->
     filtered_meetings.sort(key=lambda x: (x['date'], x['time'] or '00:00'))
     return filtered_meetings
 
+def _format_meeting_summary(meetings: List[Dict]) -> str:
+    """Generer oppsummering av møter per kommune."""
+    if not meetings:
+        return ""
+    
+    # Tell møter per kommune
+    kommune_counts: Dict[str, int] = {}
+    for meeting in meetings:
+        kommune = meeting.get('kommune', 'Ukjent')
+        kommune_counts[kommune] = kommune_counts.get(kommune, 0) + 1
+    
+    # Sorter kommuner alfabetisk
+    sorted_kommuner = sorted(kommune_counts.items())
+    
+    # Bygg oppsummeringstekst
+    summary = "\n\n---\n📊 *Oppsummering*\n"
+    for kommune, count in sorted_kommuner:
+        summary += f"• {kommune}: {count} møte{'r' if count != 1 else ''}\n"
+    
+    return summary
+
+
 def format_slack_message(meetings: List[Dict]) -> str:
     """Formater møter til Slack-melding."""
     if not meetings:
@@ -697,6 +719,9 @@ def format_slack_message(meetings: List[Dict]) -> str:
 
         if meeting.get('location') and meeting['location'] != "Ikke oppgitt":
             message += f"  {meeting['location']}\n"
+    
+    # Legg til oppsummering nederst
+    message += _format_meeting_summary(meetings)
     
     return message
 
