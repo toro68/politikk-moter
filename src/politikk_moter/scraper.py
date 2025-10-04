@@ -681,6 +681,20 @@ def format_slack_message(meetings: List[Dict]) -> str:
             date_str = date_str.replace('Saturday', 'Lørdag')
             date_str = date_str.replace('Sunday', 'Søndag')
             
+            # Norske månedsnavn
+            date_str = date_str.replace('January', 'januar')
+            date_str = date_str.replace('February', 'februar')
+            date_str = date_str.replace('March', 'mars')
+            date_str = date_str.replace('April', 'april')
+            date_str = date_str.replace('May', 'mai')
+            date_str = date_str.replace('June', 'juni')
+            date_str = date_str.replace('July', 'juli')
+            date_str = date_str.replace('August', 'august')
+            date_str = date_str.replace('September', 'september')
+            date_str = date_str.replace('October', 'oktober')
+            date_str = date_str.replace('November', 'november')
+            date_str = date_str.replace('December', 'desember')
+            
             message += f"\n*{date_str}*\n"
         
         # Møteinfo - gjør linjen klikkbar tilbake til kildesiden hvis URL finnes
