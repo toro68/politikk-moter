@@ -96,6 +96,8 @@ class MoteParser:
             return None
         # Foretrekk tider med kolon eller 'kl' prefiks; unngå å tolke dd.mm som tid
         m = re.search(r'(?:kl\.?\s*)?(\d{1,2}):(\d{2})', text)
+        if not m:
+            m = re.search(r'kl\.?\s*(\d{1,2})\.(\d{2})', text, re.IGNORECASE)
         if m:
             h, mi = m.groups()
             try:
@@ -343,13 +345,20 @@ class MoteParser:
             if not title:
                 continue
 
-            meeting_date = None
-            meeting_time = None
+            meeting_date = self.parse_date_from_text(raw_title)
+            meeting_time = self.parse_time_from_text(raw_title)
             for candidate in date_spans:
                 text = candidate.get_text(' ', strip=True)
                 if not text:
                     continue
-                if meeting_date is None:
+                text_lower = text.lower()
+                skip_for_date = any(keyword in text_lower for keyword in (
+                    'oppdatert',
+                    'publisert',
+                    'sist endra',
+                    'sist endret',
+                ))
+                if meeting_date is None and not skip_for_date:
                     parsed_date = self.parse_date_from_text(text)
                     if parsed_date:
                         meeting_date = parsed_date
