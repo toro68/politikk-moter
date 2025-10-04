@@ -5,6 +5,7 @@ import asyncio
 import os
 import re
 import sys
+from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Sequence
 from urllib.parse import urljoin
@@ -664,6 +665,7 @@ def format_slack_message(meetings: List[Dict]) -> str:
     message = "📅 *Politiske møter de neste 10 dagene*\n\n"
     
     current_date = None
+    kommune_counts = defaultdict(int)
     for meeting in meetings:
         meeting_date = datetime.strptime(meeting['date'], '%Y-%m-%d')
         
@@ -697,6 +699,16 @@ def format_slack_message(meetings: List[Dict]) -> str:
 
         if meeting.get('location') and meeting['location'] != "Ikke oppgitt":
             message += f"  {meeting['location']}\n"
+
+        kommune = meeting.get('kommune') or 'Ukjent kommune'
+        kommune_counts[kommune] += 1
+
+    if kommune_counts:
+        message += "\n*Oppsummering per kommune*\n"
+        for kommune in sorted(kommune_counts):
+            count = kommune_counts[kommune]
+            label = "møte" if count == 1 else "møter"
+            message += f"• {kommune}: {count} {label}\n"
     
     return message
 

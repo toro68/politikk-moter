@@ -83,6 +83,47 @@ def test_format_slack_message_includes_titles():
         assert meeting["title"] in message
         assert meeting["kommune"] in message
 
+    assert "*Oppsummering per kommune*" in message
+    assert "• Sauda kommune: 2 møter" in message
+
+
+def test_format_slack_message_summarizes_multiple_kommuner():
+    sample_meetings = [
+        {
+            "title": "Formannskapet",
+            "date": "2025-10-01",
+            "time": "10:00",
+            "location": "Rådhuset",
+            "kommune": "Sauda kommune",
+            "url": "https://example.com/sauda",
+            "raw_text": "Formannskapet",
+        },
+        {
+            "title": "Kommunestyre",
+            "date": "2025-10-02",
+            "time": "12:00",
+            "location": "Kommunestyresalen",
+            "kommune": "Strand kommune",
+            "url": "https://example.com/strand",
+            "raw_text": "Kommunestyre",
+        },
+        {
+            "title": "Eldreråd",
+            "date": "2025-10-03",
+            "time": None,
+            "location": "Rådhuset",
+            "kommune": "Sauda kommune",
+            "url": "https://example.com/eldrerad",
+            "raw_text": "Eldreråd",
+        },
+    ]
+
+    message = scraper.format_slack_message(sample_meetings)
+
+    assert "*Oppsummering per kommune*" in message
+    assert "• Sauda kommune: 2 møter" in message
+    assert "• Strand kommune: 1 møte" in message
+
 
 def test_scrape_all_meetings_falls_back_to_mock(monkeypatch, dummy_meetings):
     """Når scraping ikke gir resultater skal mock-data brukes som fallback."""
