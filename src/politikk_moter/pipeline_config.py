@@ -30,7 +30,7 @@ DEFAULT_PIPELINES: List[PipelineConfig] = [
         key="utvidet",
         description="Utvidet kanal med flere kommuner og alternativ kalender",
         kommune_groups=("core", "extended"),
-        calendar_sources=("regional_kultur",),
+        calendar_sources=("regional_kultur", "andre_slack"),
         slack_webhook_env="SLACK_WEBHOOK_URL_UTVIDET",
     ),
 ]

@@ -27,6 +27,10 @@ CALENDAR_SOURCES: Dict[str, Dict[str, Optional[str]]] = {
         "env": "GOOGLE_CALENDAR_REGIONAL_KULTUR_ID",
         "description": "Regional kulturkalender (eksempel)",
     },
+    "andre_slack": {
+        "calendar_id": "c_966075c5788f04882358c95ba02070e4f7d3b208dd9638e832a765716caeef87@group.calendar.google.com",
+        "description": "Kalender for andre Slack-utsending",
+    },
 }
 
 class GoogleCalendarIntegration:
