@@ -16,6 +16,7 @@ def format_slack_message(
     meetings: Sequence[MeetingInput],
     *,
     heading_suffix: Optional[str] = None,
+    expected_kommuner: Optional[Sequence[str]] = None,
 ) -> str:
     """Render a Slack message for an iterable of meetings."""
     normalized = [ensure_meeting(m) for m in meetings]
@@ -24,14 +25,17 @@ def format_slack_message(
     if heading_suffix:
         heading += f" – {heading_suffix}"
 
-    if not normalized:
-        return f"{heading}\n\nIngen møter funnet i perioden."
-
     message = f"{heading}\n\n"
+
+    if not normalized:
+        message += "Ingen møter funnet i perioden.\n"
+        normalized_meetings: Sequence[Meeting] = []
+    else:
+        normalized_meetings = normalized
 
     current_date = None
     kommune_counts = defaultdict(int)
-    for meeting in normalized:
+    for meeting in normalized_meetings:
         meeting_date = datetime.strptime(meeting.date, '%Y-%m-%d')
 
         # Ny dato-overskrift
@@ -63,6 +67,10 @@ def format_slack_message(
             message += f"  {meeting.location}\n"
 
         kommune_counts[meeting.kommune or 'Ukjent kommune'] += 1
+
+    if expected_kommuner:
+        for kommune in expected_kommuner:
+            kommune_counts.setdefault(kommune, 0)
 
     if kommune_counts:
         message += "\n*Oppsummering per kommune*\n"

@@ -5,11 +5,17 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+
+try:  # Local imports when running as module
+    from .kommuner import KOMMUNE_CONFIGS
+except ImportError:  # pragma: no cover - fallback for direct script execution
+    from kommuner import KOMMUNE_CONFIGS  # type: ignore
 
 # Kalender-ID for politiske møter (tidligere standard)
 CALENDAR_ID = "c_635df6a653ea35ad30afe385c7271817d5e0b664b38d65aa08642226f7b5e355@group.calendar.google.com"
@@ -30,6 +36,47 @@ CALENDAR_SOURCES: Dict[str, Dict[str, Optional[str]]] = {
         "description": "Turnuskalender for politisk desk",
     },
 }
+
+
+def _build_calendar_keyword_map() -> Dict[str, str]:
+    """Lag et oppslag for å gjenkjenne kommune-navn i kalendertekster."""
+    keywords: Dict[str, str] = {}
+    for config in KOMMUNE_CONFIGS:
+        lower_name = config.name.lower()
+        variants = {lower_name}
+        if lower_name.endswith(" kommune"):
+            variants.add(lower_name[: -len(" kommune")])
+        variants.update({variant.replace(" kommune", "").strip() for variant in list(variants)})
+        variants.update({variant.replace(" ", "") for variant in list(variants)})
+        for variant in variants:
+            if not variant or len(variant) < 2:
+                continue
+            keywords.setdefault(variant, config.name)
+    return keywords
+
+
+CALENDAR_KOMMUNE_KEYWORDS = _build_calendar_keyword_map()
+
+
+def _infer_kommune_from_text(text: Optional[str]) -> Optional[str]:
+    if not text:
+        return None
+    normalized = text.lower()
+    for keyword, kommune_name in CALENDAR_KOMMUNE_KEYWORDS.items():
+        if keyword in normalized:
+            return kommune_name
+    return None
+
+
+def _canonicalize_kommune_name(candidate: Optional[str], *extra_texts: str) -> str:
+    """Forsøk å kartlegge kandidattekst til et kjent kommunenavn."""
+    for blob in (candidate, *extra_texts):
+        kommune = _infer_kommune_from_text(blob)
+        if kommune:
+            return kommune
+    if candidate:
+        return candidate
+    return "Manuelt lagt til"
 
 class GoogleCalendarIntegration:
     """Håndterer Google Calendar API-integrasjon."""
@@ -134,9 +181,8 @@ class GoogleCalendarIntegration:
             
             # Finn kommune-navn (standard til "Manuelt lagt til")
             kommune = "Manuelt lagt til"
-            
+
             # Prøv å parse kommune fra beskrivelse eller tittel
-            import re
             kommune_match = re.search(r'Kommune:\s*([^,\n\r]+)', description, re.IGNORECASE)
             if kommune_match:
                 kommune = kommune_match.group(1).strip()
@@ -151,6 +197,9 @@ class GoogleCalendarIntegration:
             # Hent event URL hvis tilgjengelig
             event_url = event.get('htmlLink', '')
             
+            search_blob = " ".join(filter(None, [title, description, location]))
+            kommune = _canonicalize_kommune_name(kommune, search_blob)
+
             return {
                 'title': title,
                 'date': meeting_date,

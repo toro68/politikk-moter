@@ -76,6 +76,26 @@ def _is_truthy_env(env_name: str) -> bool:
     return value in {"1", "true", "yes", "on"}
 
 
+def _expected_kommuner_by_batch(pipeline: PipelineConfig) -> Dict[str, List[str]]:
+    """Return expected kommune names per Slack batch for summaries."""
+    kommune_configs = get_kommune_configs(pipeline.kommune_groups)
+    pipeline_names = {config["name"] for config in kommune_configs}
+
+    turnus_expected = sorted(name for name in pipeline_names if name in TURNUS_KOMMUNER)
+    other_expected = sorted(name for name in pipeline_names if name not in TURNUS_KOMMUNER)
+
+    mapping: Dict[str, List[str]] = {}
+    if turnus_expected:
+        mapping["turnus"] = turnus_expected
+    if other_expected:
+        mapping["ovrige"] = other_expected
+
+    if pipeline_names:
+        mapping["alle"] = sorted(pipeline_names)
+
+    return mapping
+
+
 def _format_heading_suffix(label: str, meetings: Sequence[Meeting]) -> str:
     """Return a human readable suffix for the Slack heading."""
     base_label = BATCH_LABELS.get(label, label.replace("_", " ").title())
@@ -882,14 +902,22 @@ def run_pipeline(
 
     normalized_meetings = [ensure_meeting(meeting) for meeting in meetings]
     batches = build_slack_batches(normalized_meetings)
+    expected_by_label = _expected_kommuner_by_batch(pipeline)
 
     if debug_mode:
         print("🎭 DEBUG-MODUS: Viser Slack-meldinger uten å sende")
         print("=" * 50)
         for idx, (label, batch) in enumerate(batches, start=1):
             suffix = _format_heading_suffix(label, batch)
+            expected = expected_by_label.get(label) or expected_by_label.get("alle")
             print(f"Melding {idx}/{len(batches)} ({suffix})")
-            print(format_slack_message(batch, heading_suffix=suffix))
+            print(
+                format_slack_message(
+                    batch,
+                    heading_suffix=suffix,
+                    expected_kommuner=expected,
+                )
+            )
             print("-" * 50)
         print("=" * 50)
         return True
@@ -899,7 +927,12 @@ def run_pipeline(
     notified_fallback_envs: set[str] = set()
     for idx, (label, batch) in enumerate(batches, start=1):
         suffix = _format_heading_suffix(label, batch)
-        slack_message = format_slack_message(batch, heading_suffix=suffix)
+        expected = expected_by_label.get(label) or expected_by_label.get("alle")
+        slack_message = format_slack_message(
+            batch,
+            heading_suffix=suffix,
+            expected_kommuner=expected,
+        )
         target_env = pipeline.batch_webhook_envs.get(label, pipeline.slack_webhook_env)
 
         if target_env not in webhook_cache:

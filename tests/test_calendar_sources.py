@@ -43,3 +43,33 @@ def test_resolve_calendar_id_finds_default_when_set(monkeypatch) -> None:
     monkeypatch.setenv("GOOGLE_CALENDAR_TURNUS_ID", "turnus@example.com")
     calendar_id_turnus = cal._resolve_calendar_id("turnus")  # pylint: disable=protected-access
     assert calendar_id_turnus == "turnus@example.com"
+
+
+def test_calendar_event_infers_kommune_from_title() -> None:
+    integration = cal.GoogleCalendarIntegration(cal.CALENDAR_ID)
+    event = {
+        "summary": "Sirdal ungdomsråd",
+        "description": "",
+        "location": "",
+        "start": {"date": "2025-11-24"},
+    }
+
+    meeting = integration._convert_calendar_event_to_meeting(event)  # pylint: disable=protected-access
+
+    assert meeting is not None
+    assert meeting["kommune"] == "Sirdal kommune"
+
+
+def test_calendar_event_infers_kommune_from_location() -> None:
+    integration = cal.GoogleCalendarIntegration(cal.CALENDAR_ID)
+    event = {
+        "summary": "Politisk møte",
+        "description": "",
+        "location": "Møterommet, Klepp kommune",
+        "start": {"date": "2025-11-24"},
+    }
+
+    meeting = integration._convert_calendar_event_to_meeting(event)  # pylint: disable=protected-access
+
+    assert meeting is not None
+    assert meeting["kommune"] == "Klepp kommune"
