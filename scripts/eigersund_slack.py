@@ -8,12 +8,16 @@ import os
 import sys
 from datetime import datetime
 
-# sørg for repo-root i path
+# sørg for at src/ er på path
 repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-if repo_root not in sys.path:
-    sys.path.insert(0, repo_root)
+src_dir = os.path.join(repo_root, 'src')
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
 
-from scraper import format_slack_message, filter_meetings_by_date_range
+from politikk_moter.scraper import (  # pylint: disable=import-error
+    filter_meetings_by_date_range,
+    format_slack_message,
+)
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
@@ -24,17 +28,17 @@ URL = "https://innsyn.onacos.no/eigersund/mote/wfinnsyn.ashx?response=moteplan&"
 def fetch_table(url=URL):
     resp = requests.get(url, timeout=15)
     resp.raise_for_status()
-    soup = BeautifulSoup(resp.content, 'html.parser')
+    page_soup = BeautifulSoup(resp.content, 'html.parser')
     # Finn tabellen som inneholder 'Møteplan'
     table = None
-    for t in soup.find_all('table'):
+    for t in page_soup.find_all('table'):
         caption = t.find('caption')
         if caption and 'Møteplan' in caption.get_text():
             table = t
             break
     if not table:
-        table = soup.find('table')
-    return table, soup
+        table = page_soup.find('table')
+    return table, page_soup
 
 
 def parse_table_to_meetings(table, base_url=URL, year=None):

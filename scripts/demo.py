@@ -1,10 +1,23 @@
 #!/usr/bin/env python3
-"""
-Demo-versjon som viser hvordan Slack-meldingen ser ut uten å sende til Slack.
-"""
+"""Demo-versjon som viser hvordan Slack-meldingen ser ut uten å sende til Slack."""
 
-from scraper import scrape_all_meetings, filter_meetings_by_date_range, format_slack_message
-from mock_data import get_mock_meetings
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+from politikk_moter.mock_data import get_mock_meetings  # pylint: disable=import-error
+from politikk_moter.scraper import (  # pylint: disable=import-error
+    filter_meetings_by_date_range,
+    format_slack_message,
+    scrape_all_meetings,
+)
 
 def demo_slack_message():
     """Generer og vis demo Slack-melding."""

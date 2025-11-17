@@ -1,20 +1,25 @@
 #!/usr/bin/env python3
-"""
-Secondary scraper: gjenbruker scraping fra `scraper.py` og sender Slack-melding til en annen webhook.
-Bruk miljøvariabelen `SLACK_WEBHOOK_URL_SECONDARY` for den alternative kanalen.
-Kjør med `--debug` eller `--test` for å bare vise meldingen uten å sende.
-"""
+"""Scraper som sender Slack-varsel til alternativ webhook."""
+
+from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
+
 import requests
 
-try:
-    # Gjenbruk funksjonene fra hoved-scraper
-    from scraper import scrape_all_meetings, filter_meetings_by_date_range, format_slack_message
-except Exception as e:
-    print(f"❌ Kunne ikke importere fra scraper.py: {e}")
-    raise
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+from politikk_moter.scraper import (  # pylint: disable=import-error
+    filter_meetings_by_date_range,
+    format_slack_message,
+    scrape_all_meetings,
+)
 
 
 def send_to_slack_with_webhook(message: str, webhook_env: str = 'SLACK_WEBHOOK_URL_SECONDARY', force_send: bool = False) -> bool:

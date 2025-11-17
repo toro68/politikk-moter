@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """High-level tests for the politikk_moter scraper package."""
 
-import os
 import sys
 import textwrap
 import types
@@ -17,8 +16,9 @@ SRC = ROOT / "src"
 if SRC.exists():
     sys.path.insert(0, str(SRC))
 
-from politikk_moter import scraper  # noqa: E402  # pylint: disable=wrong-import-position
-from politikk_moter.mock_data import get_mock_meetings  # noqa: E402  # pylint: disable=wrong-import-position
+from politikk_moter import scraper  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from politikk_moter.mock_data import get_mock_meetings  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from politikk_moter.models import ensure_meeting  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
 @pytest.fixture(autouse=True)
@@ -68,7 +68,7 @@ def dummy_meetings():
 def test_filter_meetings_by_date_range_limits_window(dummy_meetings):
     """filter_meetings_by_date_range skal filtrere bort møter utenfor perioden."""
     filtered = scraper.filter_meetings_by_date_range(dummy_meetings, days_ahead=10)
-    titles = [meeting["title"] for meeting in filtered]
+    titles = [meeting.title for meeting in filtered]
 
     assert titles == ["Kommunestyremøte", "Formannskap"], "Kun møter i 10-dagers vindu forventes"
 
@@ -125,6 +125,48 @@ def test_format_slack_message_summarizes_multiple_kommuner():
     assert "• Strand kommune: 1 møte" in message
 
 
+def test_split_meetings_for_turnus_uses_named_kommuner():
+    meetings = [
+        ensure_meeting({"title": "Turnus", "date": "2025-01-01", "kommune": "Stavanger kommune"}),
+        ensure_meeting({"title": "Andre", "date": "2025-01-01", "kommune": "Sauda kommune"}),
+    ]
+
+    turnus, other = scraper.split_meetings_for_turnus(meetings)
+
+    assert [m.title for m in turnus] == ["Turnus"]
+    assert [m.title for m in other] == ["Andre"]
+
+
+def test_split_meetings_for_turnus_includes_calendar_source():
+    meetings = [
+        ensure_meeting(
+            {
+                "title": "Turnuskalender",
+                "date": "2025-02-01",
+                "kommune": "Manuelt lagt til",
+                "source": "calendar:turnus",
+            }
+        ),
+        ensure_meeting({"title": "Andre", "date": "2025-02-01", "kommune": "Sauda kommune"}),
+    ]
+
+    turnus, other = scraper.split_meetings_for_turnus(meetings)
+
+    assert [m.title for m in turnus] == ["Turnuskalender"]
+    assert [m.title for m in other] == ["Andre"]
+
+
+def test_build_slack_batches_skips_second_when_no_other_meetings():
+    meetings = [
+        ensure_meeting({"title": "Turnus", "date": "2025-03-01", "kommune": "Stavanger kommune"})
+    ]
+
+    batches = scraper.build_slack_batches(meetings)
+
+    assert len(batches) == 1
+    assert batches[0][0] == "turnus"
+
+
 def test_scrape_all_meetings_falls_back_to_mock(monkeypatch, dummy_meetings):
     """Når scraping ikke gir resultater skal mock-data brukes som fallback."""
 
@@ -150,7 +192,10 @@ def test_scrape_all_meetings_falls_back_to_mock(monkeypatch, dummy_meetings):
 
     meetings = scraper.scrape_all_meetings(kommune_configs=kommune_configs, calendar_sources=[])
 
-    assert meetings == dummy_meetings
+    expected = [ensure_meeting(m) for m in dummy_meetings]
+    actual = [ensure_meeting(m) for m in meetings]
+
+    assert actual == expected
 
 
 def test_send_to_slack_in_test_mode_avoids_network(monkeypatch):
@@ -212,45 +257,47 @@ def test_extended_group_contains_sandnes():
 
 
 def test_stavanger_custom_cards_parsed(monkeypatch):
-        """Stavanger sin kortvisning skal gi møter uten duplikater."""
+    """Stavanger sin kortvisning skal gi møter uten duplikater."""
 
-        html = textwrap.dedent(
-                """
-                <html>
-                    <body>
-                        <div class="meeting-card">
-                            <div class="meeting-info">
-                                Områdeutvalg Nord: Hana, Riska og Sviland 16.10.2025 kl. 19:00
-                            </div>
-                            <div class="meeting-meta">
-                                <span class="date">16.10.2025</span>
-                                <span class="time">19:00</span>
-                            </div>
-                        </div>
-                    </body>
-                </html>
-                """
-        ).strip()
+    html = textwrap.dedent(
+        """
+        <html>
+            <body>
+                <div class="meeting-card">
+                    <div class="meeting-info">
+                        Områdeutvalg Nord: Hana, Riska og Sviland 16.10.2025 kl. 19:00
+                    </div>
+                    <div class="meeting-meta">
+                        <span class="date">16.10.2025</span>
+                        <span class="time">19:00</span>
+                    </div>
+                </div>
+            </body>
+        </html>
+        """
+    ).strip()
 
-        parser = scraper.MoteParser()
+    parser = scraper.MoteParser()
 
-        class FakeResponse:  # pylint: disable=too-few-public-methods
-                status_code = 200
+    class FakeResponse:  # pylint: disable=too-few-public-methods
+        status_code = 200
 
-                def raise_for_status(self):
-                        return None
+        def raise_for_status(self):
+            return None
 
-                @property
-                def content(self):  # noqa: D401 - tilfredsstill requests API
-                        return html.encode("utf-8")
+        @property
+        def content(self):  # noqa: D401 - tilfredsstill requests API
+            return html.encode("utf-8")
 
-        monkeypatch.setattr(parser.session, "get", lambda *_args, **_kwargs: FakeResponse())
+    monkeypatch.setattr(parser.session, "get", lambda *_args, **_kwargs: FakeResponse())
 
-        meetings = parser.parse_custom_site("https://stavanger-elm.digdem.no/motekalender", "Stavanger kommune")
+    meetings = parser.parse_custom_site(
+        "https://stavanger-elm.digdem.no/motekalender", "Stavanger kommune"
+    )
 
-        assert len(meetings) == 1
-        meeting = meetings[0]
+    assert len(meetings) == 1
+    meeting = meetings[0]
 
-        assert meeting["title"] == "Områdeutvalg Nord: Hana, Riska og Sviland"
-        assert meeting["date"] == "2025-10-16"
-        assert meeting["time"] == "19:00"
+    assert meeting["title"] == "Områdeutvalg Nord: Hana, Riska og Sviland"
+    assert meeting["date"] == "2025-10-16"
+    assert meeting["time"] == "19:00"

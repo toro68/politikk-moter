@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""
-Google Calendar integration for politiske møter.
-"""
+"""Google Calendar integration for politiske møter."""
 
-import os
+from __future__ import annotations
+
 import json
+import os
 import tempfile
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 from google.auth.transport.requests import Request
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -27,16 +27,18 @@ CALENDAR_SOURCES: Dict[str, Dict[str, Optional[str]]] = {
         "env": "GOOGLE_CALENDAR_REGIONAL_KULTUR_ID",
         "description": "Regional kulturkalender (eksempel)",
     },
+    "turnus": {
+        "env": "GOOGLE_CALENDAR_TURNUS_ID",
+        "description": "Turnuskalender for politisk desk",
+    },
 }
 
 class GoogleCalendarIntegration:
     """Håndterer Google Calendar API-integrasjon."""
     
     def __init__(self, calendar_id: str):
-        self.service = None
-        self.calendar_id = CALENDAR_ID
-        if calendar_id:
-            self.calendar_id = calendar_id
+        self.service: Any = None
+        self.calendar_id = calendar_id or CALENDAR_ID
         
     def authenticate(self) -> bool:
         """Autentiser med Google Calendar API via service account."""
@@ -62,11 +64,11 @@ class GoogleCalendarIntegration:
             print("✅ Google Calendar API autentisering vellykket")
             return True
             
-        except json.JSONDecodeError as e:
-            print(f"❌ Ugyldig JSON i GOOGLE_SERVICE_ACCOUNT_JSON: {e}")
+        except json.JSONDecodeError as exc:
+            print(f"❌ Ugyldig JSON i GOOGLE_SERVICE_ACCOUNT_JSON: {exc}")
             return False
-        except Exception as e:
-            print(f"❌ Google Calendar autentiseringsfeil: {e}")
+        except Exception as exc:  # pylint: disable=broad-except
+            print(f"❌ Google Calendar autentiseringsfeil: {exc}")
             return False
     
     def get_calendar_meetings(self, days_ahead: int = 9) -> List[Dict]:
@@ -77,7 +79,6 @@ class GoogleCalendarIntegration:
         
         try:
             # Sett tidsramme: i dag + neste N dager
-            from datetime import datetime, timedelta
             now = datetime.now()
             today = now.replace(hour=0, minute=0, second=0, microsecond=0)
             end_date = today + timedelta(days=days_ahead + 1)
@@ -86,7 +87,7 @@ class GoogleCalendarIntegration:
             time_max = end_date.isoformat() + 'Z'
             
             # Hent events fra kalenderen
-            events_result = self.service.events().list(
+            events_result = self.service.events().list(  # pylint: disable=no-member
                 calendarId=self.calendar_id,
                 timeMin=time_min,
                 timeMax=time_max,
@@ -107,8 +108,8 @@ class GoogleCalendarIntegration:
             print(f"📅 Hentet {len(meetings)} møter fra Google Calendar")
             return meetings
             
-        except Exception as e:
-            print(f"❌ Feil ved henting fra Google Calendar: {e}")
+        except Exception as exc:  # pylint: disable=broad-except
+            print(f"❌ Feil ved henting fra Google Calendar: {exc}")
             return []
     
     def _convert_calendar_event_to_meeting(self, event) -> Optional[Dict]:
@@ -162,8 +163,8 @@ class GoogleCalendarIntegration:
                 'raw_text': f"Google Calendar: {title}"
             }
             
-        except Exception as e:
-            print(f"⚠️  Kunne ikke konvertere kalenderevent: {e}")
+        except Exception as exc:  # pylint: disable=broad-except
+            print(f"⚠️  Kunne ikke konvertere kalenderevent: {exc}")
             return None
     
     def _build_event_data(self, meeting: Dict) -> Dict:
@@ -193,7 +194,7 @@ class GoogleCalendarIntegration:
             description += f"Sted: {meeting['location']}\n"
         if meeting.get('url'):
             description += f"Mer info: {meeting['url']}\n"
-        description += f"\nAutomatisk lagt til av Dagsorden-bot"
+        description += "\nAutomatisk lagt til av Dagsorden-bot"
         
         # Event-data
         event_data = {
@@ -254,7 +255,7 @@ class GoogleCalendarIntegration:
             time_min = meeting_date.isoformat() + 'T00:00:00Z'
             time_max = (meeting_date + timedelta(days=1)).isoformat() + 'T00:00:00Z'
             
-            events_result = self.service.events().list(
+            events_result = self.service.events().list(  # pylint: disable=no-member
                 calendarId=self.calendar_id,
                 timeMin=time_min,
                 timeMax=time_max,
@@ -272,9 +273,26 @@ class GoogleCalendarIntegration:
             
             return False
             
-        except Exception as e:
-            print(f"⚠️  Kunne ikke sjekke om event eksisterer: {e}")
+        except Exception as exc:  # pylint: disable=broad-except
+            print(f"⚠️  Kunne ikke sjekke om event eksisterer: {exc}")
             return False
+
+    def create_meeting_event(self, meeting: Dict) -> Optional[str]:
+        """Opprett et event i kalenderen og returner event-ID."""
+        if not self.service:
+            return None
+
+        event_data = self._build_event_data(meeting)
+        try:
+            created_event = (
+                self.service.events()  # pylint: disable=no-member
+                .insert(calendarId=self.calendar_id, body=event_data)
+                .execute()
+            )
+            return created_event.get("id")
+        except HttpError as exc:
+            print(f"❌ Feil ved oppretting av kalender-event: {exc}")
+            return None
 
 def get_calendar_meetings(days_ahead: int = 9, test_mode: bool = False) -> List[Dict]:
     """
@@ -290,7 +308,6 @@ def get_calendar_meetings(days_ahead: int = 9, test_mode: bool = False) -> List[
     if test_mode:
         print("🧪 TEST-MODUS: Google Calendar-lesing")
         # Returner noen mock calendar-møter for testing
-        from datetime import datetime, timedelta
         today = datetime.now().date()
         return [
             {
@@ -300,7 +317,8 @@ def get_calendar_meetings(days_ahead: int = 9, test_mode: bool = False) -> List[
                 'location': 'Kontoret',
                 'kommune': 'Manuelt lagt til',
                 'url': 'https://calendar.google.com/calendar',
-                'raw_text': 'Google Calendar: Test calendar-møte'
+                'raw_text': 'Google Calendar: Test calendar-møte',
+                'source': 'calendar:default',
             }
         ]
     
@@ -308,7 +326,10 @@ def get_calendar_meetings(days_ahead: int = 9, test_mode: bool = False) -> List[
     if not calendar_integration.authenticate():
         return []
     
-    return calendar_integration.get_calendar_meetings(days_ahead)
+    meetings = calendar_integration.get_calendar_meetings(days_ahead)
+    for meeting in meetings:
+        meeting.setdefault('source', 'calendar:default')
+    return meetings
 
 
 def _resolve_calendar_id(source_id: str) -> Optional[str]:
@@ -339,8 +360,6 @@ def get_calendar_meetings_for_sources(
     """Hent møter fra én eller flere kalenderkilder."""
     if test_mode:
         print("🧪 TEST-MODUS: Google Calendar-lesing (flere kilder)")
-        from datetime import datetime, timedelta
-
         today = datetime.now().date()
         meetings: List[Dict] = []
         for idx, source_id in enumerate(source_ids or ["arrangementer_sa"]):
@@ -353,6 +372,7 @@ def get_calendar_meetings_for_sources(
                     "kommune": "Manuelt lagt til",
                     "url": "https://calendar.google.com/calendar",
                     "raw_text": f"Google Calendar ({source_id})",
+                    "source": f"calendar:{source_id}",
                 }
             )
         return meetings
@@ -367,7 +387,9 @@ def get_calendar_meetings_for_sources(
         if not calendar_integration.authenticate():
             continue
 
-        meetings.extend(calendar_integration.get_calendar_meetings(days_ahead))
+        for meeting in calendar_integration.get_calendar_meetings(days_ahead):
+            meeting.setdefault("source", f"calendar:{source_id}")
+            meetings.append(meeting)
     return meetings
 
 def main():

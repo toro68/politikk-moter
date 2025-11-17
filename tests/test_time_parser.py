@@ -21,6 +21,9 @@ class _TestablePlaywrightParser(PlaywrightMoteParser):
             base_url=base_url,
         )
 
+    def attach_elements_urls(self, meetings, base_url: str):
+        self._attach_elements_urls(meetings, base_url)
+
 
 TIME_SAMPLE_HTML = """
 <div class="bc-content-list">
@@ -99,3 +102,18 @@ def test_time_bc_content_list_parser(expected_title, expected_date, expected_tim
     assert target["kommune"] == "Time kommune"
     assert target["url"].startswith("https://www.time.kommune.no/")
     assert "Formannskapssalen" in target["location"]
+
+
+def test_elements_meeting_href_turns_into_detail_url():
+    parser = _TestablePlaywrightParser()
+    base = "https://prod01.elementscloud.no/publikum/971045698/Dmb"
+    meetings = [
+        {"title": "Fylkesting", "href": "/publikum/971045698/DmbMeeting?g=1&id=42"},
+        {"title": "Formannskap", "url": ""},
+    ]
+
+    parser.attach_elements_urls(meetings, base)
+
+    assert meetings[0]["url"].startswith("https://prod01.elementscloud.no/")
+    assert meetings[0]["url"].endswith("id=42")
+    assert meetings[1]["url"] == base

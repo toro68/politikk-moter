@@ -18,7 +18,8 @@ def parse_eigersund_meetings(url: str, kommune_name: str='Eigersund kommune', ye
     try:
         resp = requests.get(url, timeout=15)
         resp.raise_for_status()
-    except Exception:
+    except requests.RequestException as exc:
+        print(f"⚠️  Klarte ikke å hente møtedata fra Eigersund: {exc}")
         return []
 
     soup = BeautifulSoup(resp.content, 'html.parser')
@@ -120,20 +121,17 @@ def parse_eigersund_meetings(url: str, kommune_name: str='Eigersund kommune', ye
                 _append_meetings_from_days(days, month, year, committee, link, kommune_name, meetings, session)
 
     # Filter to only return meetings from today up to days_ahead (inclusive)
-    try:
-        today = datetime.now().date()
-        end_date = today + timedelta(days=days_ahead)
-        filtered = []
-        for m in meetings:
-            try:
-                mdate = datetime.strptime(m['date'], '%Y-%m-%d').date()
-                if today <= mdate <= end_date:
-                    filtered.append(m)
-            except Exception:
-                continue
-        return filtered
-    except Exception:
-        return meetings
+    today = datetime.now().date()
+    end_date = today + timedelta(days=days_ahead)
+    filtered = []
+    for m in meetings:
+        try:
+            mdate = datetime.strptime(m['date'], '%Y-%m-%d').date()
+        except ValueError:
+            continue
+        if today <= mdate <= end_date:
+            filtered.append(m)
+    return filtered
 
 
 def _extract_days_from_cell(cell):
@@ -145,7 +143,7 @@ def _extract_days_from_cell(cell):
         return days
     txt = cell.get_text(separator='\n', strip=True)
     if txt:
-        parts = [p.strip() for p in re.split('[,;\n/\\]+', txt) if p.strip()]
+        parts = [p.strip() for p in re.split(r'[,;\n/\\]+', txt) if p.strip()]
         if parts:
             return parts
     # final fallback: find bare numbers in the cell text
@@ -162,7 +160,7 @@ def _append_meetings_from_days(days, month, year, committee, link, kommune_name,
         try:
             day = int(digits)
             dt = datetime(year, month, day)
-        except Exception:
+        except ValueError:
             continue
         time_str = None
         location = 'Ikke oppgitt'
@@ -187,7 +185,8 @@ def _append_meetings_from_days(days, month, year, committee, link, kommune_name,
                         if re.search(r"\b" + re.escape(place) + r"\b", txt, re.IGNORECASE):
                             location = place
                             break
-        except Exception:
+        except requests.RequestException as exc:
+            print(f"⚠️  Detaljside-feil for {link}: {exc}")
             time_str = None
         meetings.append({
             'title': committee,

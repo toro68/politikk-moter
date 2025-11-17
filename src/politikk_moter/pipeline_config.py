@@ -23,7 +23,7 @@ DEFAULT_PIPELINES: List[PipelineConfig] = [
         key="standard",
         description="Standardkanal med kommuner fra eksisterende oppsett",
         kommune_groups=("core",),
-        calendar_sources=("arrangementer_sa",),
+        calendar_sources=("arrangementer_sa", "turnus"),
         slack_webhook_env="SLACK_WEBHOOK_URL",
     ),
     PipelineConfig(
