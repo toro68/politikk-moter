@@ -3,6 +3,7 @@
 ## ✅ Ferdig implementert
 
 ### Kjernesystem
+
 - **Python-scraper** med støtte for ACOS, Onacos og Elements Cloud
 - **Mock-data fallback** basert på ekte møtedata fra kommunene
 - **GitHub Actions workflow** som kjører daglig kl. 08:00

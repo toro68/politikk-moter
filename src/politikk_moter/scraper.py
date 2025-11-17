@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Scraper for politiske møter og Slack-notifikasjoner."""
+# pylint: disable=broad-except
 
 import asyncio
 import os
@@ -221,7 +222,6 @@ class MoteParser:
                 headers = [th.get_text(strip=True).lower() for th in table.find_all('th')]
                 if any(h[:3] in months_map for h in headers if h):
                     calendar_table = table
-                    header_texts = headers
                     break
 
             today = datetime.now()

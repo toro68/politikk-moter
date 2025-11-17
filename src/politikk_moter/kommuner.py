@@ -90,7 +90,7 @@ KOMMUNE_CONFIGS: List[KommuneConfig] = [
     KommuneConfig(
         name="Hå kommune",
         url="https://www.ha.no/politikk-og-samfunnsutvikling/mote-og-sakspapir/",
-        type="acos",
+        type="custom",
         groups=("core", "turnus"),
     ),
     KommuneConfig(

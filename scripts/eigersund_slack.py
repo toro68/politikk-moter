@@ -30,22 +30,22 @@ def fetch_table(url=URL):
     resp.raise_for_status()
     page_soup = BeautifulSoup(resp.content, 'html.parser')
     # Finn tabellen som inneholder 'Møteplan'
-    table = None
-    for t in page_soup.find_all('table'):
-        caption = t.find('caption')
+    target_table = None
+    for candidate in page_soup.find_all('table'):
+        caption = candidate.find('caption')
         if caption and 'Møteplan' in caption.get_text():
-            table = t
+            target_table = candidate
             break
-    if not table:
-        table = page_soup.find('table')
-    return table, page_soup
+    if not target_table:
+        target_table = page_soup.find('table')
+    return target_table, page_soup
 
 
-def parse_table_to_meetings(table, base_url=URL, year=None):
+def parse_table_to_meetings(meeting_table, base_url=URL, year=None):
     if year is None:
         year = datetime.now().year
-    meetings = []
-    for tr in table.find_all('tr'):
+    parsed_meetings = []
+    for tr in meeting_table.find_all('tr'):
         cols = tr.find_all(['td','th'])
         if not cols:
             continue
@@ -70,13 +70,13 @@ def parse_table_to_meetings(table, base_url=URL, year=None):
                 # skip non-numeric
                 try:
                     day = int(''.join([c for c in d if c.isdigit()]))
-                except Exception:
+                except ValueError:
                     continue
                 try:
                     dt = datetime(year, month, day)
-                except Exception:
+                except ValueError:
                     continue
-                meetings.append({
+                parsed_meetings.append({
                     'title': committee,
                     'date': dt.strftime('%Y-%m-%d'),
                     'time': None,
@@ -85,7 +85,7 @@ def parse_table_to_meetings(table, base_url=URL, year=None):
                     'url': link,
                     'raw_text': f'Eigersund: {committee} {day}.{month}.{year}'
                 })
-    return meetings
+    return parsed_meetings
 
 
 def send_to_slack(message: str, webhook_env: str = 'SLACK_WEBHOOK_URL', force_send: bool = False) -> bool:
@@ -102,12 +102,12 @@ def send_to_slack(message: str, webhook_env: str = 'SLACK_WEBHOOK_URL', force_se
         return False
     payload = {'text': message}
     try:
-        r = requests.post(webhook_url, json=payload, timeout=10)
-        r.raise_for_status()
+        resp = requests.post(webhook_url, json=payload, timeout=10)
+        resp.raise_for_status()
         print('✅ Sendt til Slack')
         return True
-    except Exception as e:
-        print('❌ Feil ved sending til Slack:', e)
+    except requests.RequestException as exc:
+        print('❌ Feil ved sending til Slack:', exc)
         return False
 
 
@@ -118,10 +118,13 @@ if __name__ == '__main__':
         meetings = parse_table_to_meetings(table)
         # bruk filter fra scraper for neste 10 dager
         filtered = filter_meetings_by_date_range(meetings, days_ahead=9)
-        message = format_slack_message(filtered)
-        sent = send_to_slack(message, force_send='--force' in sys.argv)
+        slack_message = format_slack_message(filtered)
+        sent = send_to_slack(slack_message, force_send='--force' in sys.argv)
         if not debug_mode and not sent:
             sys.exit(1)
-    except Exception as e:
-        print('Feil i skriptet:', e)
+    except requests.RequestException as exc:
+        print('Feil ved henting av tabell:', exc)
+        sys.exit(2)
+    except Exception as exc:  # pylint: disable=broad-except
+        print('Feil i skriptet:', exc)
         sys.exit(2)

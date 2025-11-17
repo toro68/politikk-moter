@@ -5,10 +5,8 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence
-from google.auth.transport.requests import Request
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
