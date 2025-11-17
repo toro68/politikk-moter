@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime
-from typing import Mapping, Sequence, Union
+from typing import Mapping, Sequence, Union, Optional
 
 from .models import Meeting, ensure_meeting
 
@@ -12,14 +12,22 @@ from .models import Meeting, ensure_meeting
 MeetingInput = Union[Meeting, Mapping[str, object]]
 
 
-def format_slack_message(meetings: Sequence[MeetingInput]) -> str:
+def format_slack_message(
+    meetings: Sequence[MeetingInput],
+    *,
+    heading_suffix: Optional[str] = None,
+) -> str:
     """Render a Slack message for an iterable of meetings."""
     normalized = [ensure_meeting(m) for m in meetings]
 
-    if not normalized:
-        return "📅 *Politiske møter de neste 10 dagene*\n\nIngen møter funnet i perioden."
+    heading = "📅 *Politiske møter de neste 10 dagene*"
+    if heading_suffix:
+        heading += f" – {heading_suffix}"
 
-    message = "📅 *Politiske møter de neste 10 dagene*\n\n"
+    if not normalized:
+        return f"{heading}\n\nIngen møter funnet i perioden."
+
+    message = f"{heading}\n\n"
 
     current_date = None
     kommune_counts = defaultdict(int)

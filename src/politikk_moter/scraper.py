@@ -57,6 +57,41 @@ TURNUS_KOMMUNER = {
 }
 TURNUS_CALENDAR_SOURCE = "calendar:turnus"
 
+BATCH_LABELS = {
+    "turnus": "Turnuskommuner",
+    "ovrige": "Øvrige kommuner",
+    "alle": "Politiske møter",
+}
+
+WEBHOOK_FALLBACK_ENVIRONMENTS = [
+    "SLACK_WEBHOOK_URL",
+]
+
+
+def _format_heading_suffix(label: str, meetings: Sequence[Meeting]) -> str:
+    """Return a human readable suffix for the Slack heading."""
+    base_label = BATCH_LABELS.get(label, label.replace("_", " ").title())
+    count = len(meetings)
+    if count == 0:
+        return f"{base_label} – ingen møter"
+    noun = "møte" if count == 1 else "møter"
+    return f"{base_label} ({count} {noun})"
+
+
+def _resolve_slack_webhook(env_name: str) -> Tuple[Optional[str], str, bool]:
+    """Return webhook URL, the env used, and whether fallback was applied."""
+    candidates = [env_name]
+    candidates.extend(
+        fallback for fallback in WEBHOOK_FALLBACK_ENVIRONMENTS if fallback not in candidates
+    )
+
+    for candidate in candidates:
+        value = os.getenv(candidate, "").strip()
+        if value:
+            return value, candidate, candidate != env_name
+
+    return None, env_name, False
+
 class MoteParser:
     """Parser for møtedata fra kommunale nettsider."""
     
@@ -773,12 +808,15 @@ def build_slack_batches(meetings: Sequence[Meeting]) -> List[Tuple[str, List[Mee
 
     turnus_meetings, other_meetings = split_meetings_for_turnus(meetings)
 
-    batches: List[Tuple[str, List[Meeting]]] = [
-        ("turnus", turnus_meetings),
-    ]
+    batches: List[Tuple[str, List[Meeting]]] = []
 
+    if turnus_meetings:
+        batches.append(("turnus", turnus_meetings))
     if other_meetings:
         batches.append(("ovrige", other_meetings))
+
+    if not batches:
+        batches.append(("alle", []))
 
     return batches
 
@@ -837,13 +875,16 @@ def run_pipeline(
         print("🎭 DEBUG-MODUS: Viser Slack-meldinger uten å sende")
         print("=" * 50)
         for idx, (label, batch) in enumerate(batches, start=1):
-            print(f"Melding {idx}/{len(batches)} ({label})")
-            print(format_slack_message(batch))
+            suffix = _format_heading_suffix(label, batch)
+            print(f"Melding {idx}/{len(batches)} ({suffix})")
+            print(format_slack_message(batch, heading_suffix=suffix))
             print("-" * 50)
         print("=" * 50)
         return True
 
-    resolved_webhook = os.getenv(pipeline.slack_webhook_env)
+    resolved_webhook, resolved_env, used_fallback = _resolve_slack_webhook(
+        pipeline.slack_webhook_env
+    )
     if not resolved_webhook:
         message = (
             f"ℹ️  Miljøvariabelen {pipeline.slack_webhook_env} er ikke satt. "
@@ -852,14 +893,21 @@ def run_pipeline(
         print(message)
         return not force_send
 
+    if used_fallback:
+        print(
+            f"ℹ️  Bruker {resolved_env} som fallback for pipeline {pipeline.key} "
+            f"(manglende {pipeline.slack_webhook_env})."
+        )
+
     overall_success = True
     for idx, (label, batch) in enumerate(batches, start=1):
-        slack_message = format_slack_message(batch)
-        print(f"✉️  Sender Slack-melding {idx}/{len(batches)} ({label})...")
+        suffix = _format_heading_suffix(label, batch)
+        slack_message = format_slack_message(batch, heading_suffix=suffix)
+        print(f"✉️  Sender Slack-melding {idx}/{len(batches)} ({suffix})...")
         batch_success = send_to_slack(
             slack_message,
             force_send=force_send,
-            webhook_env=pipeline.slack_webhook_env,
+            webhook_env=resolved_env,
             webhook_url=resolved_webhook,
         )
         if not batch_success:

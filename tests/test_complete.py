@@ -167,6 +167,32 @@ def test_build_slack_batches_skips_second_when_no_other_meetings():
     assert batches[0][0] == "turnus"
 
 
+def test_build_slack_batches_omits_empty_turnus_bucket():
+    meetings = [
+        ensure_meeting({"title": "Andre", "date": "2025-04-01", "kommune": "Sauda kommune"})
+    ]
+
+    batches = scraper.build_slack_batches(meetings)
+
+    assert len(batches) == 1
+    assert batches[0][0] == "ovrige"
+
+
+def test_build_slack_batches_returns_placeholder_when_no_meetings():
+    batches = scraper.build_slack_batches([])
+
+    assert len(batches) == 1
+    assert batches[0][0] == "alle"
+    assert batches[0][1] == []
+
+
+def test_format_slack_message_supports_heading_suffix():
+    message = scraper.format_slack_message([], heading_suffix="Turnuskommuner (ingen)")
+
+    assert "Turnuskommuner" in message.splitlines()[0]
+    assert "Ingen møter" in message
+
+
 def test_scrape_all_meetings_falls_back_to_mock(monkeypatch, dummy_meetings):
     """Når scraping ikke gir resultater skal mock-data brukes som fallback."""
 
@@ -244,6 +270,42 @@ def test_run_pipeline_skips_when_webhook_missing(monkeypatch, dummy_meetings):
 
     assert result is True
     assert called["value"] is False
+
+
+def test_run_pipeline_uses_fallback_webhook(monkeypatch, dummy_meetings):
+    pipeline = types.SimpleNamespace(
+        key="fallback",
+        description="Fallback pipeline",
+        kommune_groups=("core",),
+        calendar_sources=(),
+        slack_webhook_env="MISSING_HOOK",
+    )
+
+    monkeypatch.delenv("MISSING_HOOK", raising=False)
+    monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://example.com/fallback")
+
+    monkeypatch.setattr(
+        scraper,
+        "collect_meetings_for_pipeline",
+        lambda *args, **kwargs: dummy_meetings,
+    )
+
+    send_calls = {"count": 0, "env": None, "url": None}
+
+    def fake_send(message, *, webhook_env, webhook_url, **_kwargs):
+        send_calls["count"] += 1
+        send_calls["env"] = webhook_env
+        send_calls["url"] = webhook_url
+        return True
+
+    monkeypatch.setattr(scraper, "send_to_slack", fake_send)
+
+    result = scraper.run_pipeline(pipeline, debug_mode=False)
+
+    assert result is True
+    assert send_calls["count"] >= 1
+    assert send_calls["env"] == "SLACK_WEBHOOK_URL"
+    assert send_calls["url"] == "https://example.com/fallback"
 
 
 def test_extended_group_contains_sandnes():
