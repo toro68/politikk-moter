@@ -79,25 +79,25 @@ KOMMUNE_CONFIGS: List[KommuneConfig] = [
         name="Time kommune",
         url="https://www.time.kommune.no/politikk/mote-og-saksdokument/moter-og-saksdokument/",
         type="acos",
-        groups=("core", "playwright"),
+        groups=("core", "playwright", "turnus"),
     ),
     KommuneConfig(
         name="Klepp kommune",
         url="https://opengov.360online.com/Meetings/KLEPP",
         type="custom",
-        groups=("core",),
+        groups=("core", "turnus"),
     ),
     KommuneConfig(
         name="Hå kommune",
         url="https://www.ha.no/politikk-og-samfunnsutvikling/mote-og-sakspapir/",
-        type="custom",
-        groups=("core",),
+        type="acos",
+        groups=("core", "turnus"),
     ),
     KommuneConfig(
         name="Sola kommune",
         url="https://nyttinnsyn.sola.kommune.no/wfinnsyn.ashx?response=moteplan&",
         type="onacos",
-        groups=("core", "playwright"),
+        groups=("core", "playwright", "turnus"),
     ),
     KommuneConfig(
         name="Bymiljøpakken",
@@ -112,6 +112,12 @@ KOMMUNE_CONFIGS: List[KommuneConfig] = [
         groups=("core", "playwright"),
     ),
     KommuneConfig(
+        name="Stavanger kommune",
+        url="https://stavanger-elm.digdem.no/motekalender",
+        type="custom",
+        groups=("core", "turnus"),
+    ),
+    KommuneConfig(
         name="Sandnes kommune",
         url="https://opengov.360online.com/Meetings/SANDNESKOMMUNE",
         type="custom",
@@ -122,7 +128,7 @@ KOMMUNE_CONFIGS: List[KommuneConfig] = [
         name="Randaberg kommune",
         url="https://www.randaberg.kommune.no/innsyn/politikk/",
         type="acos",
-        groups=("extended",),
+        groups=("extended", "turnus"),
     ),
 ]
 

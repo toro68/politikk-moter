@@ -11,6 +11,7 @@ from bs4 import BeautifulSoup
 import re
 from urllib.parse import urljoin
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from typing import List, Dict, Optional
 
 
@@ -20,6 +21,7 @@ class PlaywrightMoteParser:
         self.context = None
         self.playwright = None
         self._current_base_url: str = ""
+        self._oslo_tz = ZoneInfo("Europe/Oslo")
 
     async def __aenter__(self):
         self.playwright = await async_playwright().start()
@@ -79,6 +81,7 @@ class PlaywrightMoteParser:
             content = await page.content()
             soup = BeautifulSoup(content, 'html.parser')
             meetings = self._extract_elements_meetings(soup, kommune_label)
+            self._attach_elements_urls(meetings, url)
 
             # For meetings without explicit time, try opening the meeting detail pages
             for meeting in meetings:
@@ -153,6 +156,130 @@ class PlaywrightMoteParser:
             return []
         finally:
             self._current_base_url = ""
+
+    async def scrape_digdem_site(self, url: str, kommune_name: str) -> List[Dict]:
+        page = None
+        try:
+            print(f"🎭 Playwright Digdem: {kommune_name}")
+            page = await self.context.new_page()
+            self._current_base_url = url
+            await page.goto(url, wait_until='networkidle', timeout=45000)
+            await page.wait_for_function("() => window.__APOLLO_CLIENT__ && window.__APOLLO_CLIENT__.cache", timeout=20000)
+            await page.wait_for_timeout(1500)
+
+            try:
+                right_button = page.locator('button:has(svg.tabler-icon-chevron-right)')
+                if await right_button.count() > 0:
+                    await right_button.first.click()
+                    await page.wait_for_timeout(2000)
+            except Exception:
+                pass
+
+            apollo_cache = await page.evaluate("""
+                () => {
+                    if (!window.__APOLLO_CLIENT__) {
+                        return null;
+                    }
+                    try {
+                        return window.__APOLLO_CLIENT__.cache.extract();
+                    } catch (error) {
+                        return null;
+                    }
+                }
+            """)
+
+            meetings = self._extract_digdem_meetings(apollo_cache, kommune_name, url)
+            await page.close()
+            return meetings
+        except Exception as exc:
+            print(f"Digdem Playwright feil for {kommune_name}: {exc}")
+            if page:
+                try:
+                    await page.close()
+                except Exception:
+                    pass
+            return []
+        finally:
+            self._current_base_url = ""
+
+    def _extract_digdem_meetings(self, cache: Optional[Dict], kommune_name: str, base_url: str) -> List[Dict]:
+        if not cache or not isinstance(cache, dict):
+            return []
+
+        commission_names_by_ref: Dict[str, str] = {}
+        commission_names_by_id: Dict[str, str] = {}
+        for key, value in cache.items():
+            if not isinstance(value, dict):
+                continue
+            if key.startswith('Commission:') and value.get('name'):
+                commission_names_by_ref[key] = value['name']
+                if value.get('id'):
+                    commission_names_by_id[value['id']] = value['name']
+
+        meetings: List[Dict] = []
+        seen_ids: set[str] = set()
+        now = datetime.now(self._oslo_tz)
+        earliest = now - timedelta(days=2)
+        latest = now + timedelta(days=400)
+
+        for key, value in cache.items():
+            if not isinstance(value, dict) or not key.startswith('Meeting:'):
+                continue
+
+            meeting_id = value.get('id')
+            date_raw = value.get('date') or value.get('endDateTime')
+            if not meeting_id or not date_raw or meeting_id in seen_ids:
+                continue
+
+            try:
+                start_dt = datetime.fromisoformat(date_raw.replace('Z', '+00:00'))
+                start_local = start_dt.astimezone(self._oslo_tz)
+            except Exception:
+                continue
+
+            if start_local < earliest or start_local > latest:
+                continue
+
+            commission_ref = None
+            commission_name = None
+            commission = value.get('commission') or {}
+            if isinstance(commission, dict):
+                commission_ref = commission.get('__ref')
+            if commission_ref:
+                commission_name = commission_names_by_ref.get(commission_ref)
+                if not commission_name and ':' in commission_ref:
+                    commission_name = commission_names_by_id.get(commission_ref.split(':', 1)[1])
+
+            base_title = value.get('meetingName') or commission_name or 'Politisk møte'
+            status = (value.get('status') or '').strip()
+            if status and status.lower() != 'regulært':
+                title = f"[{status}] {base_title}"
+            else:
+                title = base_title
+
+            meeting_url = f"{base_url.rstrip('/')}/{meeting_id}"
+            meetings.append({
+                'title': title[:100],
+                'date': start_local.strftime('%Y-%m-%d'),
+                'time': start_local.strftime('%H:%M'),
+                'location': 'Ikke oppgitt',
+                'kommune': kommune_name,
+                'url': meeting_url,
+                'raw_text': f"Status: {status or 'Ukjent'} | Internal: {value.get('internalStatus') or '-'}",
+            })
+            seen_ids.add(meeting_id)
+
+        meetings.sort(key=lambda item: (item['date'], item.get('time') or ''))
+        return meetings
+
+    def _attach_elements_urls(self, meetings: List[Dict], base_url: str) -> None:
+        """Sørg for at Elements Cloud-møter peker på detaljerte lenker."""
+        for meeting in meetings:
+            href = meeting.get('href')
+            if href:
+                meeting['url'] = urljoin(base_url, href)
+            elif not meeting.get('url'):
+                meeting['url'] = base_url
 
     def _extract_meetings_from_soup(self, soup: BeautifulSoup, kommune_name: str) -> List[Dict]:
         meetings = []
@@ -363,7 +490,11 @@ class PlaywrightMoteParser:
             if not title_text:
                 continue
 
-            date_container = item.select_one('._meetingDate_mqsmx_38')
+            date_container = (
+                item.select_one('div._meetingDate_mqsmx_38')
+                or item.select_one('div.MoteListItem_meetingDate__780f64')
+                or item.select_one('div[class*="meetingDate"]:not([class*="meetingDateDay"])')
+            )
             candidate_date_text = date_container.get_text(' ', strip=True) if date_container else ''
 
             if candidate_date_text and '-' in candidate_date_text:
@@ -371,22 +502,27 @@ class PlaywrightMoteParser:
 
             # Reconstruct day/month/year when split into separate divs
             if date_container:
-                day_el = date_container.select_one('._meetingDateDay_mqsmx_50')
+                day_el = (
+                    date_container.select_one('._meetingDateDay_mqsmx_50')
+                    or date_container.select_one('[class*="meetingDateDay"]')
+                )
                 month_text = None
                 year_text = None
-                if day_el:
-                    for div in date_container.find_all('div'):
-                        text = div.get_text(' ', strip=True)
-                        classes = div.get('class') or []
-                        if not text:
-                            continue
-                        if '_meetingDateDay_mqsmx_50' in classes:
-                            continue
-                        if 'innsyn-header-hidden' in classes:
-                            year_text = text
-                        elif text != '-':
-                            month_text = text
-                    day_text = day_el.get_text(strip=True).strip('. ')
+                day_text = day_el.get_text(strip=True).strip('. ') if day_el else None
+                for div in date_container.find_all(['div', 'span']):
+                    text = div.get_text(' ', strip=True)
+                    classes = div.get('class') or []
+                    if not text:
+                        continue
+                    if day_el is not None and div is day_el:
+                        continue
+                    if day_text and text.strip('. ') == day_text:
+                        continue
+                    if 'innsyn-header-hidden' in classes:
+                        year_text = text
+                    elif text != '-' and not month_text:
+                        month_text = text
+                if day_text:
                     parts = [part for part in (day_text, month_text, year_text) if part]
                     if parts:
                         candidate_date_text = ' '.join(parts)
@@ -460,6 +596,14 @@ class PlaywrightMoteParser:
     def _extract_elements_meetings(self, soup: BeautifulSoup, kommune_name: Optional[str] = None) -> List[Dict]:
         meetings: List[Dict] = []
         kommune_label = kommune_name or 'Rogaland fylkeskommune'
+
+        bc_meetings = self._extract_bc_content_list_meetings(
+            soup,
+            kommune_label,
+            base_url=self._current_base_url or None,
+        )
+        if bc_meetings:
+            return bc_meetings
 
         def _parse_date_string(s: str) -> Optional[str]:
             if not s:
@@ -853,7 +997,9 @@ async def scrape_with_playwright(kommune_urls: List[Dict]) -> List[Dict]:
                         # fallback to Playwright parsing if dedicated parser fails
                         pass
 
-                if t == 'elements':
+                if url and 'digdem' in url:
+                    meetings = await parser.scrape_digdem_site(url, name or url)
+                elif t == 'elements':
                     meetings = await parser.scrape_elements_cloud(url, name)
                 elif t == 'onacos':
                     meetings = await parser.scrape_onacos_site(url, name)

@@ -5,9 +5,8 @@ import asyncio
 import os
 import re
 import sys
-from collections import defaultdict
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Union
 from urllib.parse import urljoin
 
 import requests
@@ -15,6 +14,9 @@ from bs4 import BeautifulSoup
 
 from .kommuner import get_default_kommune_configs, get_kommune_configs
 from .pipeline_config import PipelineConfig, get_pipeline_configs
+from .models import Meeting, ensure_meeting
+# Import Playwright scraper for JavaScript-heavy sites
+from .reporting import format_slack_message
 
 # Import Playwright scraper for JavaScript-heavy sites
 try:
@@ -43,6 +45,16 @@ try:
     EIGERSUND_AVAILABLE = True
 except Exception:
     EIGERSUND_AVAILABLE = False
+
+TURNUS_KOMMUNER = {
+    "Stavanger kommune",
+    "Sola kommune",
+    "Randaberg kommune",
+    "Klepp kommune",
+    "Time kommune",
+    "Hå kommune",
+}
+TURNUS_CALENDAR_SOURCE = "calendar:turnus"
 
 class MoteParser:
     """Parser for møtedata fra kommunale nettsider."""
@@ -104,6 +116,26 @@ class MoteParser:
                 mm = int(mi)
                 if 0 <= hh < 24 and 0 <= mm < 60:
                     return f"{hh:02d}:{mm:02d}"
+            except ValueError:
+                pass
+        m = re.search(r'(?:kl\.?\s*)(\d{1,2})(?:[\.:](\d{2}))?', text, re.IGNORECASE)
+        if m:
+            h, mi = m.groups()
+            minute = mi or '00'
+            try:
+                hh = int(h)
+                mm = int(minute)
+                if 0 <= hh < 24 and 0 <= mm < 60:
+                    return f"{hh:02d}:{mm:02d}"
+            except ValueError:
+                pass
+        m = re.search(r'(?:klokka)\s*(\d{1,2})', text, re.IGNORECASE)
+        if m:
+            h = m.group(1)
+            try:
+                hh = int(h)
+                if 0 <= hh < 24:
+                    return f"{hh:02d}:00"
             except ValueError:
                 pass
         return None
@@ -298,6 +330,8 @@ class MoteParser:
             
             if 'klepp' in kommune_name.lower():
                 return self._parse_klepp_meetings(soup, url, kommune_name)
+            if 'bymiljopakken.no' in url.lower():
+                return self._parse_bymiljopakken(soup, url, kommune_name)
 
             meetings = []
             
@@ -374,6 +408,55 @@ class MoteParser:
                 'url': meeting_url,
                 'raw_text': link.get_text(' ', strip=True)[:300],
             })
+
+        unique: List[Dict] = []
+        seen = set()
+        for meeting in meetings:
+            key = (meeting['date'], meeting['title'])
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(meeting)
+
+        return unique
+
+    def _parse_bymiljopakken(self, soup: BeautifulSoup, base_url: str, kommune_name: str) -> List[Dict]:
+        meetings: List[Dict] = []
+        today = datetime.now().date()
+
+        def append_meeting(title: str, text_blob: str, href: Optional[str], location: Optional[str] = None) -> None:
+            parsed_date = self.parse_date_from_text(text_blob) or self.parse_date_from_text(title)
+            if not parsed_date:
+                return
+            meeting_date = parsed_date.date()
+            if meeting_date < today:
+                return
+            time_value = self.parse_time_from_text(text_blob)
+            meeting = {
+                'title': (title or 'Politisk møte')[:100],
+                'date': meeting_date.strftime('%Y-%m-%d'),
+                'time': time_value,
+                'location': (location or 'Ikke oppgitt')[:50],
+                'kommune': kommune_name,
+                'url': href or base_url,
+                'raw_text': text_blob[:300],
+            }
+            meetings.append(meeting)
+
+        next_block = soup.select_one('.content__info-meeting')
+        if next_block:
+            title_el = next_block.find('h3')
+            title = title_el.get_text(' ', strip=True) if title_el else 'Neste møte'
+            text_blob = next_block.get_text(' ', strip=True)
+            location_match = re.search(r'(?:Sted|Stad):\s*([^\n]+)', text_blob, re.IGNORECASE)
+            location = location_match.group(1).strip() if location_match else None
+            append_meeting(title, text_blob, base_url, location)
+
+        for link in soup.select('.planned-meetings a.planned-meetings__link'):
+            text_blob = link.get_text(' ', strip=True)
+            title = link.get('title') or text_blob
+            href = urljoin(base_url, link.get('href') or '')
+            append_meeting(title, text_blob, href)
 
         unique: List[Dict] = []
         seen = set()
@@ -574,8 +657,13 @@ def scrape_all_meetings(
     standard_sites: List[Dict] = []
 
     for kommune_config in kommuner:
-        # ACOS/Onacos/Elements og andre JS-baserte innsynsider trenger Playwright
-        if kommune_config['type'] in ['elements', 'onacos', 'acos'] or 'innsynpluss' in kommune_config['url']:
+        url_value = (kommune_config.get('url') or '').lower()
+        # ACOS/Onacos/Elements, Digdem og andre JS-baserte innsynsider trenger Playwright
+        if (
+            kommune_config['type'] in ['elements', 'onacos', 'acos']
+            or 'innsynpluss' in url_value
+            or 'digdem' in url_value
+        ):
             js_heavy_sites.append(kommune_config)
         else:
             standard_sites.append(kommune_config)
@@ -639,81 +727,62 @@ def scrape_all_meetings(
     
     return all_meetings
 
-def filter_meetings_by_date_range(meetings: List[Dict], days_ahead: int = 10) -> List[Dict]:
+def filter_meetings_by_date_range(
+    meetings: Sequence[Union[Meeting, Mapping[str, object]]],
+    days_ahead: int = 10,
+) -> List[Meeting]:
     """Filtrer møter for dagens dato + angitt antall dager frem."""
     today = datetime.now().date()
     end_date = today + timedelta(days=days_ahead)
     
-    filtered_meetings = []
-    for meeting in meetings:
+    filtered_meetings: List[Meeting] = []
+    normalized = [ensure_meeting(m) for m in meetings]
+
+    for meeting in normalized:
         try:
-            meeting_date = datetime.strptime(meeting['date'], '%Y-%m-%d').date()
+            meeting_date = datetime.strptime(meeting.date, '%Y-%m-%d').date()
             if today <= meeting_date <= end_date:
                 filtered_meetings.append(meeting)
         except ValueError:
             continue
     
     # Sorter etter dato og tid
-    filtered_meetings.sort(key=lambda x: (x['date'], x['time'] or '00:00'))
+    filtered_meetings.sort(key=lambda meeting: meeting.sort_key())
     return filtered_meetings
 
-def format_slack_message(meetings: List[Dict]) -> str:
-    """Formater møter til Slack-melding."""
-    if not meetings:
-        return "📅 *Politiske møter de neste 10 dagene*\n\nIngen møter funnet i perioden."
-    
-    message = "📅 *Politiske møter de neste 10 dagene*\n\n"
-    
-    current_date = None
-    kommune_counts = defaultdict(int)
+
+def split_meetings_for_turnus(
+    meetings: Sequence[Meeting],
+) -> Tuple[List[Meeting], List[Meeting]]:
+    """Del møtene i turnus-kommuner/kalender vs øvrige kommuner."""
+
+    turnus_meetings: List[Meeting] = []
+    other_meetings: List[Meeting] = []
+
     for meeting in meetings:
-        meeting_date = datetime.strptime(meeting['date'], '%Y-%m-%d')
-        
-        # Ny dato-overskrift
-        if current_date != meeting['date']:
-            current_date = meeting['date']
-            date_str = meeting_date.strftime('%A %d. %B %Y')
-            
-            # Norske dagnavn
-            date_str = date_str.replace('Monday', 'Mandag')
-            date_str = date_str.replace('Tuesday', 'Tirsdag')  
-            date_str = date_str.replace('Wednesday', 'Onsdag')
-            date_str = date_str.replace('Thursday', 'Torsdag')
-            date_str = date_str.replace('Friday', 'Fredag')
-            date_str = date_str.replace('Saturday', 'Lørdag')
-            date_str = date_str.replace('Sunday', 'Søndag')
-            
-            message += f"\n*{date_str}*\n"
-        
-        # Møteinfo - gjør linjen klikkbar tilbake til kildesiden hvis URL finnes
-        display_title = f"{meeting['title']} ({meeting['kommune']})"
-        if meeting.get('url'):
-            # Slack format for link: <url|tekst>
-            display_title = f"<{meeting['url']}|{display_title}>"
-
-        # Vis tid kun hvis vi har den
-        if meeting.get('time'):
-            message += f"• {display_title} - kl. {meeting['time']}\n"
+        if (meeting.kommune in TURNUS_KOMMUNER) or (meeting.source == TURNUS_CALENDAR_SOURCE):
+            turnus_meetings.append(meeting)
         else:
-            message += f"• {display_title}\n"
+            other_meetings.append(meeting)
 
-        if meeting.get('location') and meeting['location'] != "Ikke oppgitt":
-            message += f"  {meeting['location']}\n"
-
-        kommune = meeting.get('kommune') or 'Ukjent kommune'
-        kommune_counts[kommune] += 1
-
-    if kommune_counts:
-        message += "\n*Oppsummering per kommune*\n"
-        for kommune in sorted(kommune_counts):
-            count = kommune_counts[kommune]
-            label = "møte" if count == 1 else "møter"
-            message += f"• {kommune}: {count} {label}\n"
-    
-    return message
+    return turnus_meetings, other_meetings
 
 
-def _fallback_meetings(days_ahead: int) -> List[Dict]:
+def build_slack_batches(meetings: Sequence[Meeting]) -> List[Tuple[str, List[Meeting]]]:
+    """Lag to Slack-meldingsbatcher: turnus først, deretter øvrige kommuner."""
+
+    turnus_meetings, other_meetings = split_meetings_for_turnus(meetings)
+
+    batches: List[Tuple[str, List[Meeting]]] = [
+        ("turnus", turnus_meetings),
+    ]
+
+    if other_meetings:
+        batches.append(("ovrige", other_meetings))
+
+    return batches
+
+def _fallback_meetings(days_ahead: int) -> List[Meeting]:
     try:
         from .mock_data import get_mock_meetings
 
@@ -728,7 +797,7 @@ def collect_meetings_for_pipeline(
     pipeline: PipelineConfig,
     *,
     days_ahead: int,
-) -> List[Dict]:
+) -> List[Meeting]:
     kommune_configs = get_kommune_configs(pipeline.kommune_groups)
     if not kommune_configs and not pipeline.calendar_sources:
         print(f"⚠️  Pipeline {pipeline.key} har ingen kilder definert – hopper over")
@@ -757,16 +826,20 @@ def run_pipeline(
     print(f"\n🚀 Kjører pipeline '{pipeline.key}': {pipeline.description}")
 
     meetings = collect_meetings_for_pipeline(
-    pipeline,
-    days_ahead=days_ahead,
+        pipeline,
+        days_ahead=days_ahead,
     )
 
-    slack_message = format_slack_message(meetings)
+    normalized_meetings = [ensure_meeting(meeting) for meeting in meetings]
+    batches = build_slack_batches(normalized_meetings)
 
     if debug_mode:
-        print("🎭 DEBUG-MODUS: Viser Slack-melding uten å sende")
+        print("🎭 DEBUG-MODUS: Viser Slack-meldinger uten å sende")
         print("=" * 50)
-        print(slack_message)
+        for idx, (label, batch) in enumerate(batches, start=1):
+            print(f"Melding {idx}/{len(batches)} ({label})")
+            print(format_slack_message(batch))
+            print("-" * 50)
         print("=" * 50)
         return True
 
@@ -779,15 +852,23 @@ def run_pipeline(
         print(message)
         return not force_send
 
-    slack_success = send_to_slack(
-        slack_message,
-        force_send=force_send,
-        webhook_env=pipeline.slack_webhook_env,
-        webhook_url=resolved_webhook,
-    )
-    if not slack_success:
-        print(f"❌ Slack-sending feilet for pipeline {pipeline.key}")
-    return slack_success
+    overall_success = True
+    for idx, (label, batch) in enumerate(batches, start=1):
+        slack_message = format_slack_message(batch)
+        print(f"✉️  Sender Slack-melding {idx}/{len(batches)} ({label})...")
+        batch_success = send_to_slack(
+            slack_message,
+            force_send=force_send,
+            webhook_env=pipeline.slack_webhook_env,
+            webhook_url=resolved_webhook,
+        )
+        if not batch_success:
+            print(
+                f"❌ Slack-sending feilet for melding {idx} i pipeline {pipeline.key}"
+            )
+        overall_success = overall_success and batch_success
+
+    return overall_success
 
 def send_to_slack(
     message: str,
