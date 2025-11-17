@@ -248,6 +248,7 @@ def test_run_pipeline_skips_when_webhook_missing(monkeypatch, dummy_meetings):
         kommune_groups=("core",),
         calendar_sources=(),
         slack_webhook_env="MISSING_HOOK",
+        batch_webhook_envs={},
     )
 
     monkeypatch.delenv("MISSING_HOOK", raising=False)
@@ -279,10 +280,12 @@ def test_run_pipeline_uses_fallback_webhook(monkeypatch, dummy_meetings):
         kommune_groups=("core",),
         calendar_sources=(),
         slack_webhook_env="MISSING_HOOK",
+        batch_webhook_envs={},
     )
 
     monkeypatch.delenv("MISSING_HOOK", raising=False)
     monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://example.com/fallback")
+    monkeypatch.setenv("SLACK_WEBHOOK_FALLBACK", "true")
 
     monkeypatch.setattr(
         scraper,
@@ -306,6 +309,85 @@ def test_run_pipeline_uses_fallback_webhook(monkeypatch, dummy_meetings):
     assert send_calls["count"] >= 1
     assert send_calls["env"] == "SLACK_WEBHOOK_URL"
     assert send_calls["url"] == "https://example.com/fallback"
+
+
+def test_run_pipeline_does_not_fallback_without_flag(monkeypatch, dummy_meetings):
+    pipeline = types.SimpleNamespace(
+        key="fallback-disabled",
+        description="Fallback disabled",
+        kommune_groups=("core",),
+        calendar_sources=(),
+        slack_webhook_env="MISSING_HOOK",
+        batch_webhook_envs={},
+    )
+
+    monkeypatch.delenv("MISSING_HOOK", raising=False)
+    monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://example.com/fallback")
+    monkeypatch.delenv("SLACK_WEBHOOK_FALLBACK", raising=False)
+
+    monkeypatch.setattr(
+        scraper,
+        "collect_meetings_for_pipeline",
+        lambda *args, **kwargs: dummy_meetings,
+    )
+
+    called = {"count": 0}
+
+    def fake_send(*_args, **_kwargs):  # pragma: no cover - should not be triggered
+        called["count"] += 1
+        return True
+
+    monkeypatch.setattr(scraper, "send_to_slack", fake_send)
+
+    result = scraper.run_pipeline(pipeline, debug_mode=False)
+
+    assert result is True
+    assert called["count"] == 0
+
+
+def test_run_pipeline_uses_label_specific_webhooks(monkeypatch):
+    turnus_meeting = ensure_meeting(
+        {"title": "Turnus", "date": "2025-01-01", "kommune": "Stavanger kommune"}
+    )
+    other_meeting = ensure_meeting(
+        {"title": "Andre", "date": "2025-01-02", "kommune": "Sauda kommune"}
+    )
+
+    pipeline = types.SimpleNamespace(
+        key="label-mapping",
+        description="Label mapping",
+        kommune_groups=("core",),
+        calendar_sources=(),
+        slack_webhook_env="SLACK_WEBHOOK_URL_OVRIGE",
+        batch_webhook_envs={
+            "turnus": "SLACK_WEBHOOK_URL_TURNUS",
+            "ovrige": "SLACK_WEBHOOK_URL_OVRIGE",
+        },
+    )
+
+    monkeypatch.setenv("SLACK_WEBHOOK_URL_TURNUS", "https://example.com/turnus")
+    monkeypatch.setenv("SLACK_WEBHOOK_URL_OVRIGE", "https://example.com/ovrige")
+
+    monkeypatch.setattr(
+        scraper,
+        "collect_meetings_for_pipeline",
+        lambda *args, **kwargs: [turnus_meeting, other_meeting],
+    )
+
+    calls = []
+
+    def fake_send(message, *, webhook_env, webhook_url, **_kwargs):
+        calls.append((webhook_env, webhook_url, message))
+        return True
+
+    monkeypatch.setattr(scraper, "send_to_slack", fake_send)
+
+    result = scraper.run_pipeline(pipeline, debug_mode=False)
+
+    assert result is True
+    assert len(calls) == 2
+    assert any(env == "SLACK_WEBHOOK_URL_TURNUS" for env, *_ in calls)
+    assert any(env == "SLACK_WEBHOOK_URL_OVRIGE" for env, *_ in calls)
 
 
 def test_extended_group_contains_sandnes():

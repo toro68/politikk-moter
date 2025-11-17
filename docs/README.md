@@ -47,19 +47,28 @@ Når ingen møter finnes i de neste 10 dagene, brukes realistiske mock-data som 
 ✅ = Standard scraping  
 🎭 = Playwright-basert scraping
 
+## Slack-kanaler
+
+Hver pipeline sender to separate meldinger (Turnuskommuner og Øvrige kommuner) for å holde møtene sortert. Som standard går begge meldingene til samme Slack-kanal via `SLACK_WEBHOOK_URL`.
+
+Ønsker du å sende batchene til ulike kanaler, kan du gi hver batch sin egen webhook ved å oppdatere `batch_webhook_envs` i `src/politikk_moter/pipeline_config.py` og legge til de nye hemmelighetene (f.eks. `SLACK_WEBHOOK_URL_TURNUS` og `SLACK_WEBHOOK_URL_OVRIGE`).
+
 ## Veien videre
 
 ### Fase 1: Forbedret scraping
+
 - **Selenium/Playwright**: Implementer headless browser for JavaScript-tunge sider
 - **API-søk**: Undersøk om kommuner har RSS/API-endepunkter
 - **Tidsjobb**: Sett opp regelmessig sjekk etter nye møter
 
 ### Fase 2: Utvidelse
+
 - **Flere kommuner**: Legg til flere kommuner i regionen
 - **Google Calendar**: Implementer Google Calendar API-integrasjon
 - **E-post**: Legg til e-post-varsel som alternativ til Slack
 
 ### Midlertidig løsning
+
 - Mock-data brukes når scraping feiler
 - Basert på kjente møtedata fra kommunene
 - Sikrer at Slack-integrasjonen fungerer konsekvent
@@ -67,15 +76,18 @@ Når ingen møter finnes i de neste 10 dagene, brukes realistiske mock-data som 
 ## Tekniske detaljer
 
 ### Scraping-utfordringer
+
 Kommunesidene bruker ofte:
+
 - JavaScript for å laste møtedata (krever headless browser)
 - Autentisering for API-tilgang (krever brukerkonto)
 - ACOS/Onacos CMS med dynamisk innhold
 
 ### Alternativ til scraping
+
 1. **RSS-feeds**: Noen kommuner har RSS, men ikke for møter
 2. **iCal-abonnement**: Få kommuner tilbyr .ics-filer
-3. **Manuell oppdatering**: Periodisk oppdatering av mock_data.py
+3. **Manuell oppdatering**: Periodisk oppdatering av `mock_data.py`
 
 ## Installasjon og testing
 
@@ -113,7 +125,7 @@ python playwright_scraper.py
 ### 4. Slack-integrasjon
 
 1. Gå til din Slack workspace
-2. Opprett en ny app: https://api.slack.com/apps
+2. Opprett en ny app: <https://api.slack.com/apps>
 3. Velg "Incoming Webhooks"
 4. Aktiver webhooks og lag en ny webhook for ønsket kanal
 5. Kopier webhook URL-en
@@ -121,10 +133,12 @@ python playwright_scraper.py
 ### 2. GitHub Secrets
 
 1. Gå til repository → Settings → Secrets and variables → Actions
-2. Legg til ny secret:
-  - Name: `SLACK_WEBHOOK_URL`
-  - Value: Din webhook URL fra Slack
-3. (Valgfritt) Gjenta for ekstra pipelines definert i `pipeline_config.py`, f.eks. `SLACK_WEBHOOK_URL_UTVIDET`
+1. Legg til følgende secrets:
+
+  - `SLACK_WEBHOOK_URL` (obligatorisk – brukes for begge meldinger som standard)
+  - `SLACK_WEBHOOK_URL_UTVIDET` (kun hvis den utvidede kanalen i `pipeline_config.py` skal brukes)
+
+1. (Valgfritt) Legg til ekstra secrets dersom du ønsker egne kanaler for turnus og øvrige batcher, og referer til dem i `batch_webhook_envs`
 
 ### 3. Aktivering
 
@@ -166,20 +180,24 @@ python scraper.py
 ## GitHub Actions
 
 Workflow kjører:
+
 - **Automatisk**: Hver dag kl. 08:00 (norsk tid)
-- **Manuelt**: Via "Actions" tab → "Run workflow"
+- **Manuelt**: Via "Actions"-fanen → "Run workflow"
 
 ## Feilsøking
 
 ### Ingen møter funnet
+
 - Kommunenes nettsider kan ha endret struktur
 - Sjekk debug-output: `python scraper.py --debug`
 
 ### Slack-melding sendes ikke
+
 - Verifiser at `SLACK_WEBHOOK_URL` secret er riktig satt
 - Test webhook manuelt med curl
 
 ### GitHub Actions feiler
+
 - Sjekk "Actions" tab for detaljerte error logs
 - Workflow har innebygd debug på feil
 
@@ -212,7 +230,7 @@ filtered_meetings = filter_meetings_by_date_range(all_meetings, days_ahead=14)
 
 ## Eksempel Slack-melding
 
-```
+```text
 📅 Politiske møter de neste 10 dagene
 
 *Tirsdag 20. august 2025*
@@ -229,7 +247,7 @@ filtered_meetings = filter_meetings_by_date_range(all_meetings, days_ahead=14)
 
 ## Struktur
 
-```
+```text
 .
 ├── scraper.py                    # Hovedskript
 ├── .github/workflows/

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import List, Sequence
+from dataclasses import dataclass, field
+from typing import List, Mapping, Sequence
 
 
 @dataclass(frozen=True)
@@ -16,6 +16,7 @@ class PipelineConfig:
     calendar_sources: Sequence[str]
     slack_webhook_env: str
     enabled: bool = True
+    batch_webhook_envs: Mapping[str, str] = field(default_factory=dict)
 
 
 DEFAULT_PIPELINES: List[PipelineConfig] = [

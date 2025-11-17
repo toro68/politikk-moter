@@ -67,6 +67,14 @@ WEBHOOK_FALLBACK_ENVIRONMENTS = [
     "SLACK_WEBHOOK_URL",
 ]
 
+SLACK_WEBHOOK_FALLBACK_FLAG_ENV = "SLACK_WEBHOOK_FALLBACK"
+
+
+def _is_truthy_env(env_name: str) -> bool:
+    """Return True when env var exists with a truthy value."""
+    value = os.getenv(env_name, "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
 
 def _format_heading_suffix(label: str, meetings: Sequence[Meeting]) -> str:
     """Return a human readable suffix for the Slack heading."""
@@ -85,7 +93,11 @@ def _resolve_slack_webhook(env_name: str) -> Tuple[Optional[str], str, bool]:
         fallback for fallback in WEBHOOK_FALLBACK_ENVIRONMENTS if fallback not in candidates
     )
 
+    allow_fallback = _is_truthy_env(SLACK_WEBHOOK_FALLBACK_FLAG_ENV)
+
     for candidate in candidates:
+        if candidate != env_name and not allow_fallback:
+            continue
         value = os.getenv(candidate, "").strip()
         if value:
             return value, candidate, candidate != env_name
@@ -882,27 +894,33 @@ def run_pipeline(
         print("=" * 50)
         return True
 
-    resolved_webhook, resolved_env, used_fallback = _resolve_slack_webhook(
-        pipeline.slack_webhook_env
-    )
-    if not resolved_webhook:
-        message = (
-            f"ℹ️  Miljøvariabelen {pipeline.slack_webhook_env} er ikke satt. "
-            f"Hopper over sending for pipeline {pipeline.key}."
-        )
-        print(message)
-        return not force_send
-
-    if used_fallback:
-        print(
-            f"ℹ️  Bruker {resolved_env} som fallback for pipeline {pipeline.key} "
-            f"(manglende {pipeline.slack_webhook_env})."
-        )
-
     overall_success = True
+    webhook_cache: Dict[str, Tuple[Optional[str], str, bool]] = {}
+    notified_fallback_envs: set[str] = set()
     for idx, (label, batch) in enumerate(batches, start=1):
         suffix = _format_heading_suffix(label, batch)
         slack_message = format_slack_message(batch, heading_suffix=suffix)
+        target_env = pipeline.batch_webhook_envs.get(label, pipeline.slack_webhook_env)
+
+        if target_env not in webhook_cache:
+            webhook_cache[target_env] = _resolve_slack_webhook(target_env)
+
+        resolved_webhook, resolved_env, used_fallback = webhook_cache[target_env]
+
+        if not resolved_webhook:
+            print(
+                f"ℹ️  Miljøvariabelen {target_env} er ikke satt. "
+                f"Hopper over sending for batch '{label}' i pipeline {pipeline.key}."
+            )
+            overall_success = overall_success and not force_send
+            continue
+
+        if used_fallback and target_env not in notified_fallback_envs:
+            print(
+                f"ℹ️  Bruker {resolved_env} som fallback for {target_env} i pipeline {pipeline.key}."
+            )
+            notified_fallback_envs.add(target_env)
+
         print(f"✉️  Sender Slack-melding {idx}/{len(batches)} ({suffix})...")
         batch_success = send_to_slack(
             slack_message,
