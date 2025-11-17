@@ -73,3 +73,9 @@ def test_calendar_event_infers_kommune_from_location() -> None:
 
     assert meeting is not None
     assert meeting["kommune"] == "Klepp kommune"
+
+
+def test_turnus_calendar_defaults_to_turnus_label() -> None:
+    meetings = cal.get_calendar_meetings_for_sources(["turnus"], test_mode=True)
+    assert meetings
+    assert meetings[0]["kommune"] == "Turnus"

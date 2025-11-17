@@ -186,11 +186,72 @@ def test_build_slack_batches_returns_placeholder_when_no_meetings():
     assert batches[0][1] == []
 
 
+def test_turnus_calendar_footer_is_moved_to_last_batch():
+    turnus_meeting = ensure_meeting({
+        "title": "Stavanger formannskap",
+        "date": "2025-11-19",
+        "kommune": "Stavanger kommune",
+    })
+    other_meeting = ensure_meeting({
+        "title": "Formannskap",
+        "date": "2025-11-20",
+        "kommune": "Sauda kommune",
+    })
+    turnus_footer = ensure_meeting({
+        "title": "Turnusvakt",
+        "date": "2025-11-21",
+        "kommune": "Turnus",
+        "source": "calendar:turnus",
+    })
+
+    batches = [
+        ("turnus", [turnus_meeting, turnus_footer]),
+        ("ovrige", [other_meeting]),
+    ]
+
+    adjusted = scraper._append_turnus_footer_to_last_batch(batches)
+
+    assert adjusted[0][1] == [turnus_meeting]
+    assert adjusted[1][1][-1] == turnus_footer
+
+
 def test_format_slack_message_supports_heading_suffix():
     message = scraper.format_slack_message([], heading_suffix="Turnuskommuner (ingen)")
 
     assert "Turnuskommuner" in message.splitlines()[0]
     assert "Ingen møter" in message
+
+
+def test_turnus_meetings_listed_after_summary():
+    sample_meetings = [
+        {
+            "title": "Kommunestyre",
+            "date": "2025-10-02",
+            "time": "12:00",
+            "location": "Kommunestyresalen",
+            "kommune": "Strand kommune",
+            "url": "https://example.com/strand",
+            "raw_text": "Kommunestyre",
+        },
+        {
+            "title": "Turnusvakt",
+            "date": "2025-10-03",
+            "time": "09:00",
+            "location": "Kontoret",
+            "kommune": "Turnus",
+            "source": "calendar:turnus",
+            "url": "https://calendar.google.com",
+            "raw_text": "Turnus",
+        },
+    ]
+
+    message = scraper.format_slack_message(sample_meetings)
+
+    summary_index = message.index("*Oppsummering per kommune*")
+    turnus_index = message.index("Turnusvakt")
+
+    assert turnus_index > summary_index
+    assert "*Turnus*" in message
 
 
 def test_scrape_all_meetings_falls_back_to_mock(monkeypatch, dummy_meetings):

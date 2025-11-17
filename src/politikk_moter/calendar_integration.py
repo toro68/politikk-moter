@@ -38,6 +38,13 @@ CALENDAR_SOURCES: Dict[str, Dict[str, Optional[str]]] = {
 }
 
 
+def _apply_calendar_source_defaults(meeting: Dict, source_id: str) -> None:
+    """Ensure calendar meetings have a meaningful kommune label per source."""
+    kommune = (meeting.get("kommune") or "").strip()
+    if source_id == "turnus" and (not kommune or kommune == "Manuelt lagt til"):
+        meeting["kommune"] = "Turnus"
+
+
 def _build_calendar_keyword_map() -> Dict[str, str]:
     """Lag et oppslag for å gjenkjenne kommune-navn i kalendertekster."""
     keywords: Dict[str, str] = {}
@@ -422,6 +429,7 @@ def get_calendar_meetings_for_sources(
                     "source": f"calendar:{source_id}",
                 }
             )
+            _apply_calendar_source_defaults(meetings[-1], source_id)
         return meetings
 
     meetings: List[Dict] = []
@@ -436,6 +444,7 @@ def get_calendar_meetings_for_sources(
 
         for meeting in calendar_integration.get_calendar_meetings(days_ahead):
             meeting.setdefault("source", f"calendar:{source_id}")
+            _apply_calendar_source_defaults(meeting, source_id)
             meetings.append(meeting)
     return meetings
 
