@@ -955,7 +955,7 @@ def filter_meetings_by_date_range(
 def split_meetings_for_turnus(
     meetings: Sequence[Meeting],
 ) -> Tuple[List[Meeting], List[Meeting]]:
-    """Del møtene i turnus-kommuner/kalender vs øvrige kommuner."""
+    """Del møter i turnus-kommuner/kalender vs øvrige kommuner."""
 
     turnus_meetings: List[Meeting] = []
     other_meetings: List[Meeting] = []
@@ -970,7 +970,7 @@ def split_meetings_for_turnus(
 
 
 def build_slack_batches(meetings: Sequence[Meeting]) -> List[Tuple[str, List[Meeting]]]:
-    """Lag to Slack-meldingsbatcher: turnus først, deretter øvrige kommuner."""
+    """Lag separate Slack-batcher for turnus-kommuner og øvrige kommuner."""
 
     turnus_meetings, other_meetings = split_meetings_for_turnus(meetings)
 

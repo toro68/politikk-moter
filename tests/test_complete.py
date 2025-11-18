@@ -252,8 +252,7 @@ def test_scrape_all_meetings_falls_back_to_mock(monkeypatch, dummy_meetings):
             return []
 
     monkeypatch.setattr(scraper, "CALENDAR_AVAILABLE", False, raising=False)
-    monkeypatch.setattr(scraper, "PLAYWRIGHT_AVAILABLE", False, raising=False)
-    monkeypatch.setattr(scraper, "EIGERSUND_AVAILABLE", False, raising=False)
+
     def fake_parser():
         return EmptyParser()
 
@@ -270,11 +269,6 @@ def test_scrape_all_meetings_falls_back_to_mock(monkeypatch, dummy_meetings):
     actual = [ensure_meeting(m) for m in meetings]
 
     assert actual == expected
-
-
-def test_send_to_slack_in_test_mode_avoids_network(monkeypatch):
-    """send_to_slack skal returnere True i test-modus uten å kalle Slack."""
-
     monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://example.com/hook")
 
     def fail_post(*_args, **_kwargs):  # pragma: no cover - skal ikke nås
