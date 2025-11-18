@@ -902,46 +902,6 @@ def split_meetings_for_turnus(
     return turnus_meetings, other_meetings
 
 
-def _is_turnus_calendar_entry(meeting: Meeting) -> bool:
-    """Return True for møter fra turnus-kalenderen (egen footer i Slack)."""
-
-    source = getattr(meeting, "source", None)
-    if source == TURNUS_CALENDAR_SOURCE:
-        return True
-
-    kommune = (meeting.kommune or "").strip().lower()
-    return kommune == "turnus"
-
-
-def _append_turnus_footer_to_last_batch(
-    batches: Sequence[Tuple[str, List[Meeting]]]
-) -> List[Tuple[str, List[Meeting]]]:
-    """Flytt turnus-kalenderen til siste Slack-melding."""
-
-    if not batches:
-        return []
-
-    turnus_footer: List[Meeting] = []
-    cleaned_batches: List[Tuple[str, List[Meeting]]] = []
-
-    for label, batch in batches:
-        filtered_batch: List[Meeting] = []
-        for meeting in batch:
-            if _is_turnus_calendar_entry(meeting):
-                turnus_footer.append(meeting)
-            else:
-                filtered_batch.append(meeting)
-        cleaned_batches.append((label, filtered_batch))
-
-    if not turnus_footer:
-        return list(cleaned_batches)
-
-    # Legg turnus-footer til siste melding slik at den havner etter oppsummeringen.
-    last_label, last_batch = cleaned_batches[-1]
-    cleaned_batches[-1] = (last_label, last_batch + turnus_footer)
-    return cleaned_batches
-
-
 def build_slack_batches(meetings: Sequence[Meeting]) -> List[Tuple[str, List[Meeting]]]:
     """Lag to Slack-meldingsbatcher: turnus først, deretter øvrige kommuner."""
 
@@ -1009,7 +969,6 @@ def run_pipeline(
 
     normalized_meetings = [ensure_meeting(meeting) for meeting in meetings]
     batches = build_slack_batches(normalized_meetings)
-    batches = _append_turnus_footer_to_last_batch(batches)
     expected_by_label = _expected_kommuner_by_batch(pipeline)
 
     if debug_mode:

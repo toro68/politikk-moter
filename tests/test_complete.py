@@ -186,34 +186,6 @@ def test_build_slack_batches_returns_placeholder_when_no_meetings():
     assert batches[0][1] == []
 
 
-def test_turnus_calendar_footer_is_moved_to_last_batch():
-    turnus_meeting = ensure_meeting({
-        "title": "Stavanger formannskap",
-        "date": "2025-11-19",
-        "kommune": "Stavanger kommune",
-    })
-    other_meeting = ensure_meeting({
-        "title": "Formannskap",
-        "date": "2025-11-20",
-        "kommune": "Sauda kommune",
-    })
-    turnus_footer = ensure_meeting({
-        "title": "Turnusvakt",
-        "date": "2025-11-21",
-        "kommune": "(Turnus-kalender)",
-        "source": "calendar:turnus",
-    })
-
-    batches = [
-        ("turnus", [turnus_meeting, turnus_footer]),
-        ("ovrige", [other_meeting]),
-    ]
-
-    adjusted = scraper._append_turnus_footer_to_last_batch(batches)
-
-    assert adjusted[0][1] == [turnus_meeting]
-    assert adjusted[1][1][-1] == turnus_footer
-
 
 def test_format_slack_message_supports_heading_suffix():
     message = scraper.format_slack_message([], heading_suffix="Nord-Jæren og Jæren (ingen)")
@@ -222,7 +194,7 @@ def test_format_slack_message_supports_heading_suffix():
     assert "Ingen møter" in message
 
 
-def test_turnus_meetings_listed_after_summary():
+def test_turnus_calendar_meetings_render_inline():
     sample_meetings = [
         {
             "title": "Kommunestyre",
@@ -247,11 +219,26 @@ def test_turnus_meetings_listed_after_summary():
 
     message = scraper.format_slack_message(sample_meetings)
 
-    summary_index = message.index("*Oppsummering per kommune*")
-    turnus_index = message.index("Turnusvakt")
+    turnus_date = datetime.strptime("2025-10-03", "%Y-%m-%d")
+    date_str = turnus_date.strftime('%A %d. %B %Y')
+    for eng, nor in (
+        ("Monday", "Mandag"),
+        ("Tuesday", "Tirsdag"),
+        ("Wednesday", "Onsdag"),
+        ("Thursday", "Torsdag"),
+        ("Friday", "Fredag"),
+        ("Saturday", "Lørdag"),
+        ("Sunday", "Søndag"),
+    ):
+        date_str = date_str.replace(eng, nor)
+    expected_date_heading = f"*{date_str}*"
 
-    assert turnus_index > summary_index
-    assert "*Turnus*" in message
+    assert "*Turnus*" not in message, "Turnus-hendelser skal ikke ha egen seksjon lenger"
+    date_section_index = message.index(expected_date_heading)
+    turnus_index = message.index("Turnusvakt")
+    summary_index = message.index("*Oppsummering per kommune*")
+
+    assert date_section_index < turnus_index < summary_index
 
 
 def test_scrape_all_meetings_falls_back_to_mock(monkeypatch, dummy_meetings):
