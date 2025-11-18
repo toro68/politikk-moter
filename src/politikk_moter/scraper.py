@@ -402,6 +402,54 @@ class MoteParser:
 
             meetings = []
             
+            # Special-case: Hå kommune bruker en enkel side-layout som kan
+            # listes ut med klare dato-/tidsblokker. Implementer en lettvekts-
+            # ekstraktor som fanger opp de to første møtene på `ha.no`.
+            if 'ha.no' in url.lower() or 'hå.no' in url.lower():
+                # Se etter elementer som inneholder dato + møtetittel
+                for block in soup.select('article, .event, .meeting, .post'):
+                    text = block.get_text(' ', strip=True)
+                    if not text:
+                        continue
+                    # Prøv å parse dato og tid
+                    parsed_date = self.parse_date_from_text(text)
+                    parsed_time = self.parse_time_from_text(text)
+                    if not parsed_date:
+                        continue
+                    title = None
+                    # Finn teksten som ser ut som tittel (linjer uten dato/tid)
+                    for line in text.split('\n'):
+                        line = line.strip()
+                        if not line:
+                            continue
+                        if re.search(r'\d{1,2}[\.\-/]\d{1,2}[\.\-/]\d{2,4}', line):
+                            continue
+                        if re.search(r'kl\.?', line, re.I):
+                            continue
+                        title = line
+                        break
+                    if not title:
+                        title = 'Politisk møte'
+                    meetings.append({
+                        'title': title,
+                        'date': parsed_date.strftime('%Y-%m-%d'),
+                        'time': parsed_time,
+                        'location': 'Hå rådhus' if 'rådhus' in text.lower() else 'Ikke oppgitt',
+                        'kommune': kommune_name,
+                        'url': url,
+                        'raw_text': text[:300],
+                    })
+                # Deduplicate and return if we found items
+                if meetings:
+                    unique = []
+                    seen = set()
+                    for m in meetings:
+                        key = (m['date'], m['title'])
+                        if key not in seen:
+                            seen.add(key)
+                            unique.append(m)
+                    return unique
+
             # For Bymiljøpakken og lignende - søk bredt
             # Alle elementer som kan inneholde møteinfo
             all_elements = []
@@ -716,6 +764,25 @@ def scrape_all_meetings(
                 calendar_meetings = get_calendar_meetings(days_ahead=9, test_mode=debug_mode)  # type: ignore[misc]
             all_meetings.extend(calendar_meetings)
             print(f"Fant {len(calendar_meetings)} møter fra Google Calendar")
+            # Diagnostic: list any meetings that originate from the turnus calendar
+            turnus_found = [m for m in calendar_meetings if (m.get('source') or '').startswith('calendar:turnus') or (m.get('kommune') or '').strip().lower() == 'turnus']
+            if turnus_found:
+                print(f"🔍 Oppdaget {len(turnus_found)} turnus-møter fra kalender:")
+                for m in turnus_found:
+                    print(f"  - {m.get('date')} {m.get('time') or 'hele dagen'}: {m.get('title')} ({m.get('kommune')}) [source={m.get('source')}]")
+            else:
+                print("🔍 Ingen turnus-møter funnet i kalenderhentingen")
+            # Additional diagnostic: search for likely keywords that might indicate Turnus entries
+            keywords = ['turnus', 'turnusfri', 'hans christian']
+            matches = []
+            for m in calendar_meetings:
+                txt = " ".join(filter(None, [str(m.get('title','')).lower(), str(m.get('raw_text','')).lower(), str(m.get('kommune','')).lower()]))
+                if any(k in txt for k in keywords):
+                    matches.append(m)
+            if matches:
+                print(f"🔎 Fant {len(matches)} kalenderhendelser som matcher søkeord {keywords}:")
+                for m in matches:
+                    print(f"  * {m.get('date')} {m.get('time') or 'hele dagen'}: {m.get('title')} ({m.get('kommune')}) [source={m.get('source')}] raw='{(m.get('raw_text') or '')[:80]}'")
         except Exception as e:
             print(f"⚠️  Google Calendar-feil: {e}")
 

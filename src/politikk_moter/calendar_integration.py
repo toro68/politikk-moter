@@ -444,7 +444,23 @@ def get_calendar_meetings_for_sources(
 
         for meeting in calendar_integration.get_calendar_meetings(days_ahead):
             meeting.setdefault("source", f"calendar:{source_id}")
+            # Apply defaults based on declared source
             _apply_calendar_source_defaults(meeting, source_id)
+
+            # Heuristic: if the calendar event text contains turnus-related keywords,
+            # treat it as a turnus calendar entry regardless of source_id.
+            text_blob = " ".join(
+                filter(None, [
+                    str(meeting.get("title", "")),
+                    str(meeting.get("description", "")),
+                    str(meeting.get("raw_text", "")),
+                ])
+            ).lower()
+            turnus_keywords = ("turnus", "turnusfri", "hans christian")
+            if any(k in text_blob for k in turnus_keywords):
+                meeting["source"] = "calendar:turnus"
+                meeting.setdefault("kommune", "Turnus")
+
             meetings.append(meeting)
     return meetings
 
