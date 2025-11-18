@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -10,10 +11,15 @@ from typing import List
 import pytest
 from bs4 import BeautifulSoup
 
-from politikk_moter import eigersund_parser
-from politikk_moter.kommuner import KOMMUNE_CONFIGS
-from politikk_moter.playwright_scraper import PlaywrightMoteParser
-from politikk_moter.scraper import MoteParser
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if SRC.exists():
+    sys.path.insert(0, str(SRC))
+
+from politikk_moter import eigersund_parser  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from politikk_moter.kommuner import KOMMUNE_CONFIGS  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from politikk_moter.playwright_scraper import PlaywrightMoteParser  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from politikk_moter.scraper import MoteParser  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "kommune_html"
 
@@ -94,7 +100,7 @@ def test_klepp_parser_uses_special_markup(monkeypatch: pytest.MonkeyPatch) -> No
     assert meetings[0]["date"].startswith("2025-")
 
 
-def test_sandnes_parser_uses_regex_markup(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_opengov_parser_handles_sandnes(monkeypatch: pytest.MonkeyPatch) -> None:
     parser = MoteParser()
     html = load_fixture("sandnes_sample.html")
 
@@ -112,6 +118,26 @@ def test_sandnes_parser_uses_regex_markup(monkeypatch: pytest.MonkeyPatch) -> No
     assert meetings[0]["title"].startswith("Formannskapet")
     assert meetings[0]["time"] == "12:00"
     assert all(m["kommune"] == "Sandnes kommune" for m in meetings)
+
+
+def test_opengov_parser_handles_randaberg(monkeypatch: pytest.MonkeyPatch) -> None:
+    parser = MoteParser()
+    html = load_fixture("randaberg_sample.html")
+
+    def fake_get(*_args, **_kwargs) -> DummyResponse:
+        return DummyResponse(html)
+
+    monkeypatch.setattr(parser.session, "get", fake_get)
+
+    meetings = parser.parse_custom_site(
+        "https://opengov.360online.com/Meetings/randaberg",
+        "Randaberg kommune",
+    )
+
+    assert len(meetings) == 2
+    assert meetings[0]["title"].startswith("Hovedutvalg for nærmiljø")
+    assert meetings[0]["time"] == "18:00"
+    assert all(m["kommune"] == "Randaberg kommune" for m in meetings)
 
 
 @pytest.mark.parametrize("kommune_name", ONACOS_KOMMUNER)
@@ -170,7 +196,7 @@ def test_elements_parser_extracts_bc_cards() -> None:
     html = load_fixture("elements_sample.html")
     soup = BeautifulSoup(html, "html.parser")
 
-    meetings = parser._extract_elements_meetings(soup, ELEMENTS_NAME)  # noqa: SLF001
+    meetings = parser._extract_elements_meetings(soup, ELEMENTS_NAME)  # noqa: SLF001  # pylint: disable=protected-access
     assert meetings, "Elements parser should find meetings from bc-content cards"
     assert meetings[0]["title"] == "Fylkesting"
     assert meetings[0]["kommune"] == ELEMENTS_NAME

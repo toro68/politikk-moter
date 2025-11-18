@@ -399,13 +399,14 @@ class MoteParser:
             if html_text is None and response.content:
                 html_text = response.content.decode('utf-8', errors='ignore')
 
-            if html_text and 'sandneskommune' in url.lower():
-                sandnes_meetings = self._parse_sandnes_meetings(html_text, url, kommune_name)
-                if sandnes_meetings:
-                    return sandnes_meetings
-            
             if 'klepp' in kommune_name.lower():
                 return self._parse_klepp_meetings(soup, url, kommune_name)
+
+            if html_text and 'opengov.360online.com' in url.lower():
+                opengov_meetings = self._parse_opengov_360_meetings(html_text, url, kommune_name)
+                if opengov_meetings:
+                    return opengov_meetings
+
             if 'bymiljopakken.no' in url.lower():
                 return self._parse_bymiljopakken(soup, url, kommune_name)
 
@@ -544,11 +545,11 @@ class MoteParser:
 
         return unique
 
-    def _parse_sandnes_meetings(self, html_text: str, base_url: str, kommune_name: str) -> List[Dict]:
-        """Bruk regex for å hente møter fra Sandnes sin 360online-side."""
+    def _parse_opengov_360_meetings(self, html_text: str, base_url: str, kommune_name: str) -> List[Dict]:
+        """Bruk regex for å hente møter fra opengov.360online.com-sider (Sandnes, Randaberg m.fl.)."""
 
         pattern = re.compile(
-            r'<li[^>]*class="[^\"]*boardLink[^\"]*"[^>]*>\s*'
+            r'<li[^>]*class="[^"]*boardLink[^"]*"[^>]*>\s*'
             r'<a[^>]*href="(?P<href>[^"]+)"[^>]*>.*?'
             r'<div[^>]*class="meetingName"[^>]*>\s*<span>(?P<name>.*?)</span>.*?'
             r'<div[^>]*class="meetingDate"[^>]*>\s*<span>(?P<date>\d{1,2}[\.\-]\d{1,2}[\.\-]\d{4})</span>'
@@ -558,7 +559,7 @@ class MoteParser:
 
         meetings: List[Dict] = []
 
-        for match in pattern.finditer(html_text):
+        for match in pattern.finditer(html_text or ''):
             href = html.unescape(match.group('href') or '').strip()
             raw_title = html.unescape(match.group('name') or '').strip()
             if not href or not raw_title:
@@ -568,17 +569,16 @@ class MoteParser:
             if not parsed_date:
                 continue
 
-            time_fragment = match.group('time') or ''
-            time_fragment = time_fragment.replace('.', ':')
+            time_fragment = (match.group('time') or '').replace('.', ':')
             parsed_time = self.parse_time_from_text(time_fragment)
             if not parsed_time:
                 parsed_time = self.parse_time_from_text(raw_title)
 
-            clean_title = re.sub(r'\s+\d{1,2}[\.\-]\d{1,2}[\.\-]\d{2,4}.*', '', raw_title).strip(' -')
+            clean_title = re.sub(r'\(\s*\d{1,2}[\.\-]\d{1,2}[\.\-]\d{4}.*?\)$', '', raw_title).strip()
+            clean_title = re.sub(r'\s+\d{1,2}[\.\-]\d{1,2}[\.\-]\d{2,4}.*', '', clean_title).strip(' -:')
+            clean_title = re.sub(r'\s*kl\.?\s*\d{1,2}[:\. ]\d{2}', '', clean_title, flags=re.IGNORECASE).strip()
             if not clean_title:
-                clean_title = raw_title
-            if not clean_title:
-                clean_title = 'Politisk møte'
+                clean_title = raw_title or 'Politisk møte'
 
             meeting = {
                 'title': clean_title[:100],
