@@ -3,6 +3,7 @@
 # pylint: disable=broad-except
 
 import asyncio
+import html
 import os
 import re
 import sys
@@ -394,6 +395,14 @@ class MoteParser:
             response = self.session.get(url, timeout=10)
             response.raise_for_status()
             soup = BeautifulSoup(response.content, 'html.parser')
+            html_text = getattr(response, 'text', None)
+            if html_text is None and response.content:
+                html_text = response.content.decode('utf-8', errors='ignore')
+
+            if html_text and 'sandneskommune' in url.lower():
+                sandnes_meetings = self._parse_sandnes_meetings(html_text, url, kommune_name)
+                if sandnes_meetings:
+                    return sandnes_meetings
             
             if 'klepp' in kommune_name.lower():
                 return self._parse_klepp_meetings(soup, url, kommune_name)
@@ -523,6 +532,64 @@ class MoteParser:
                 'url': meeting_url,
                 'raw_text': link.get_text(' ', strip=True)[:300],
             })
+
+        unique: List[Dict] = []
+        seen = set()
+        for meeting in meetings:
+            key = (meeting['date'], meeting['title'])
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(meeting)
+
+        return unique
+
+    def _parse_sandnes_meetings(self, html_text: str, base_url: str, kommune_name: str) -> List[Dict]:
+        """Bruk regex for å hente møter fra Sandnes sin 360online-side."""
+
+        pattern = re.compile(
+            r'<li[^>]*class="[^\"]*boardLink[^\"]*"[^>]*>\s*'
+            r'<a[^>]*href="(?P<href>[^"]+)"[^>]*>.*?'
+            r'<div[^>]*class="meetingName"[^>]*>\s*<span>(?P<name>.*?)</span>.*?'
+            r'<div[^>]*class="meetingDate"[^>]*>\s*<span>(?P<date>\d{1,2}[\.\-]\d{1,2}[\.\-]\d{4})</span>'
+            r'(?:\s*<span>(?P<time>[0-9:\.]+)</span>)?',
+            re.IGNORECASE | re.DOTALL,
+        )
+
+        meetings: List[Dict] = []
+
+        for match in pattern.finditer(html_text):
+            href = html.unescape(match.group('href') or '').strip()
+            raw_title = html.unescape(match.group('name') or '').strip()
+            if not href or not raw_title:
+                continue
+
+            parsed_date = self.parse_date_from_text(match.group('date') or '')
+            if not parsed_date:
+                continue
+
+            time_fragment = match.group('time') or ''
+            time_fragment = time_fragment.replace('.', ':')
+            parsed_time = self.parse_time_from_text(time_fragment)
+            if not parsed_time:
+                parsed_time = self.parse_time_from_text(raw_title)
+
+            clean_title = re.sub(r'\s+\d{1,2}[\.\-]\d{1,2}[\.\-]\d{2,4}.*', '', raw_title).strip(' -')
+            if not clean_title:
+                clean_title = raw_title
+            if not clean_title:
+                clean_title = 'Politisk møte'
+
+            meeting = {
+                'title': clean_title[:100],
+                'date': parsed_date.strftime('%Y-%m-%d'),
+                'time': parsed_time,
+                'location': 'Ikke oppgitt',
+                'kommune': kommune_name,
+                'url': urljoin(base_url, href),
+                'raw_text': raw_title[:300],
+            }
+            meetings.append(meeting)
 
         unique: List[Dict] = []
         seen = set()

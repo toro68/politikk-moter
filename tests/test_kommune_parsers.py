@@ -54,7 +54,7 @@ def test_acos_parser_handles_all_kommuner(monkeypatch: pytest.MonkeyPatch, kommu
     parser = MoteParser()
     html = load_fixture("acos_sample.html")
 
-    def fake_get(url: str, timeout: int = 15) -> DummyResponse:  # noqa: ARG001 - signature parity for monkeypatch
+    def fake_get(*_args, **_kwargs) -> DummyResponse:
         return DummyResponse(html)
 
     monkeypatch.setattr(parser.session, "get", fake_get)
@@ -69,7 +69,7 @@ def test_custom_parser_handles_all_kommuner(monkeypatch: pytest.MonkeyPatch, kom
     parser = MoteParser()
     html = load_fixture("custom_sample.html")
 
-    def fake_get(url: str, timeout: int = 10) -> DummyResponse:  # noqa: ARG001
+    def fake_get(*_args, **_kwargs) -> DummyResponse:
         return DummyResponse(html)
 
     monkeypatch.setattr(parser.session, "get", fake_get)
@@ -83,7 +83,7 @@ def test_klepp_parser_uses_special_markup(monkeypatch: pytest.MonkeyPatch) -> No
     parser = MoteParser()
     html = load_fixture("klepp_sample.html")
 
-    def fake_get(url: str, timeout: int = 10) -> DummyResponse:  # noqa: ARG001
+    def fake_get(*_args, **_kwargs) -> DummyResponse:
         return DummyResponse(html)
 
     monkeypatch.setattr(parser.session, "get", fake_get)
@@ -94,12 +94,32 @@ def test_klepp_parser_uses_special_markup(monkeypatch: pytest.MonkeyPatch) -> No
     assert meetings[0]["date"].startswith("2025-")
 
 
+def test_sandnes_parser_uses_regex_markup(monkeypatch: pytest.MonkeyPatch) -> None:
+    parser = MoteParser()
+    html = load_fixture("sandnes_sample.html")
+
+    def fake_get(*_args, **_kwargs) -> DummyResponse:
+        return DummyResponse(html)
+
+    monkeypatch.setattr(parser.session, "get", fake_get)
+
+    meetings = parser.parse_custom_site(
+        "https://opengov.360online.com/Meetings/SANDNESKOMMUNE",
+        "Sandnes kommune",
+    )
+
+    assert len(meetings) == 2
+    assert meetings[0]["title"].startswith("Formannskapet")
+    assert meetings[0]["time"] == "12:00"
+    assert all(m["kommune"] == "Sandnes kommune" for m in meetings)
+
+
 @pytest.mark.parametrize("kommune_name", ONACOS_KOMMUNER)
 def test_onacos_parser_handles_all_kommuner(monkeypatch: pytest.MonkeyPatch, kommune_name: str) -> None:
     parser = MoteParser()
     html = load_fixture("onacos_sample.html")
 
-    def fake_get(url: str, timeout: int = 10) -> DummyResponse:  # noqa: ARG001
+    def fake_get(*_args, **_kwargs) -> DummyResponse:
         return DummyResponse(html)
 
     monkeypatch.setattr(parser.session, "get", fake_get)
@@ -113,7 +133,7 @@ def test_eigersund_parser_reads_table_and_details(monkeypatch: pytest.MonkeyPatc
     table_html = load_fixture("eigersund_table.html")
     detail_html = load_fixture("eigersund_detail.html")
 
-    def fake_get(url: str, timeout: int = 15) -> DummyResponse:  # noqa: ARG001
+    def fake_get(*_args, **_kwargs) -> DummyResponse:
         return DummyResponse(table_html)
 
     class FakeSession:
@@ -121,7 +141,7 @@ def test_eigersund_parser_reads_table_and_details(monkeypatch: pytest.MonkeyPatc
             self.html_text = html_text
             self.requested_urls: List[str] = []
 
-        def get(self, url: str, timeout: int = 10) -> DummyResponse:  # noqa: ARG001
+        def get(self, url: str, *_args, **_kwargs) -> DummyResponse:
             self.requested_urls.append(url)
             return DummyResponse(self.html_text)
 
@@ -150,7 +170,7 @@ def test_elements_parser_extracts_bc_cards() -> None:
     html = load_fixture("elements_sample.html")
     soup = BeautifulSoup(html, "html.parser")
 
-    meetings = parser._extract_elements_meetings(soup, ELEMENTS_NAME)
+    meetings = parser._extract_elements_meetings(soup, ELEMENTS_NAME)  # noqa: SLF001
     assert meetings, "Elements parser should find meetings from bc-content cards"
     assert meetings[0]["title"] == "Fylkesting"
     assert meetings[0]["kommune"] == ELEMENTS_NAME
