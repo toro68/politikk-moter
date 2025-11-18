@@ -49,7 +49,7 @@ Når ingen møter finnes i de neste 10 dagene, brukes realistiske mock-data som 
 
 ## Slack-kanaler
 
-Hver pipeline sender to separate meldinger (Turnuskommuner og Øvrige kommuner) for å holde møtene sortert. Som standard går begge meldingene til samme Slack-kanal via `SLACK_WEBHOOK_URL`.
+Hver pipeline sender to separate meldinger ("Nord-Jæren og Jæren" og "Ryfylke, Dalane") for å holde møtene sortert. Som standard går begge meldingene til samme Slack-kanal via `SLACK_WEBHOOK_URL`.
 
 Ønsker du å sende batchene til ulike kanaler, kan du gi hver batch sin egen webhook ved å oppdatere `batch_webhook_envs` i `src/politikk_moter/pipeline_config.py` og legge til de nye hemmelighetene (f.eks. `SLACK_WEBHOOK_URL_TURNUS` og `SLACK_WEBHOOK_URL_OVRIGE`).
 

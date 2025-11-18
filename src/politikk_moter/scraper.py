@@ -58,8 +58,8 @@ TURNUS_KOMMUNER = {
 TURNUS_CALENDAR_SOURCE = "calendar:turnus"
 
 BATCH_LABELS = {
-    "turnus": "Turnuskommuner",
-    "ovrige": "Øvrige kommuner",
+    "turnus": "Nord-Jæren og Jæren",
+    "ovrige": "Ryfylke, Dalane",
     "alle": "Politiske møter",
 }
 

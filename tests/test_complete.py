@@ -143,7 +143,7 @@ def test_split_meetings_for_turnus_includes_calendar_source():
             {
                 "title": "Turnuskalender",
                 "date": "2025-02-01",
-                "kommune": "Manuelt lagt til",
+                "kommune": "(Turnus-kalender)",
                 "source": "calendar:turnus",
             }
         ),
@@ -200,7 +200,7 @@ def test_turnus_calendar_footer_is_moved_to_last_batch():
     turnus_footer = ensure_meeting({
         "title": "Turnusvakt",
         "date": "2025-11-21",
-        "kommune": "Turnus",
+        "kommune": "(Turnus-kalender)",
         "source": "calendar:turnus",
     })
 
@@ -216,9 +216,9 @@ def test_turnus_calendar_footer_is_moved_to_last_batch():
 
 
 def test_format_slack_message_supports_heading_suffix():
-    message = scraper.format_slack_message([], heading_suffix="Turnuskommuner (ingen)")
+    message = scraper.format_slack_message([], heading_suffix="Nord-Jæren og Jæren (ingen)")
 
-    assert "Turnuskommuner" in message.splitlines()[0]
+    assert "Nord-Jæren og Jæren" in message.splitlines()[0]
     assert "Ingen møter" in message
 
 
@@ -238,7 +238,7 @@ def test_turnus_meetings_listed_after_summary():
             "date": "2025-10-03",
             "time": "09:00",
             "location": "Kontoret",
-            "kommune": "Turnus",
+            "kommune": "(Turnus-kalender)",
             "source": "calendar:turnus",
             "url": "https://calendar.google.com",
             "raw_text": "Turnus",

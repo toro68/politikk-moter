@@ -42,7 +42,9 @@ def _apply_calendar_source_defaults(meeting: Dict, source_id: str) -> None:
     """Ensure calendar meetings have a meaningful kommune label per source."""
     kommune = (meeting.get("kommune") or "").strip()
     if source_id == "turnus" and (not kommune or kommune == "Manuelt lagt til"):
-        meeting["kommune"] = "Turnus"
+        meeting["kommune"] = "(Turnus-kalender)"
+    if source_id == "arrangementer_sa" and (not kommune or kommune == "Manuelt lagt til"):
+        meeting["kommune"] = "(Arrangementer-SA-kalender)"
 
 
 def _build_calendar_keyword_map() -> Dict[str, str]:
@@ -369,7 +371,7 @@ def get_calendar_meetings(days_ahead: int = 9, test_mode: bool = False) -> List[
                 'date': (today + timedelta(days=1)).strftime('%Y-%m-%d'),
                 'time': '14:00',
                 'location': 'Kontoret',
-                'kommune': 'Manuelt lagt til',
+                'kommune': '(Turnus-kalender)',
                 'url': 'https://calendar.google.com/calendar',
                 'raw_text': 'Google Calendar: Test calendar-møte',
                 'source': 'calendar:default',
@@ -423,7 +425,7 @@ def get_calendar_meetings_for_sources(
                     "date": (today + timedelta(days=idx + 1)).strftime("%Y-%m-%d"),
                     "time": "14:00",
                     "location": "Kontoret",
-                    "kommune": "Manuelt lagt til",
+                    "kommune": "(Turnus-kalender)" if source_id == 'turnus' else "(Arrangementer-SA-kalender)",
                     "url": "https://calendar.google.com/calendar",
                     "raw_text": f"Google Calendar ({source_id})",
                     "source": f"calendar:{source_id}",
