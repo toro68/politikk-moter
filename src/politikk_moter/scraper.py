@@ -611,10 +611,14 @@ class MoteParser:
                     continue
                 name_el = li.select_one(".meetingName") or li.select_one("[class*='meetingName']")
                 date_el = li.select_one(".meetingDate") or li.select_one("[class*='meetingDate']")
+                if not date_el:
+                    continue
                 raw_title = name_el.get_text(" ", strip=True) if name_el else anchor.get_text(" ", strip=True)
                 date_span = date_el.find_all("span") if date_el else []
                 explicit_date = date_span[0].get_text(strip=True) if date_span else date_el.get_text(" ", strip=True)
                 explicit_time = date_span[1].get_text(strip=True) if len(date_span) > 1 else None
+                if not explicit_date:
+                    continue
                 _append_meeting(raw_title or "Politisk møte", explicit_date or "", explicit_time, href, li.get_text(" ", strip=True))
 
         if not meetings:
