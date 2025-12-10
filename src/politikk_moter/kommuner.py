@@ -121,7 +121,7 @@ KOMMUNE_CONFIGS: List[KommuneConfig] = [
         name="Sandnes kommune",
         url="https://opengov.360online.com/Meetings/SANDNESKOMMUNE",
         type="custom",
-        groups=("extended",),
+        groups=("core", "turnus", "extended"),
     ),
     # Flere kommuner kan legges til her (f.eks. for utvidet Slack-kanal)
     KommuneConfig(

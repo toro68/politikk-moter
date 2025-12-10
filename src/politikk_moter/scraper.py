@@ -61,6 +61,7 @@ TURNUS_KOMMUNER = {
     "Klepp kommune",
     "Time kommune",
     "Hå kommune",
+    "Sandnes kommune",
 }
 TURNUS_CALENDAR_SOURCE = "calendar:turnus"
 
