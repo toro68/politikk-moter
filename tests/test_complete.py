@@ -251,19 +251,26 @@ def test_scrape_all_meetings_falls_back_to_mock(monkeypatch, dummy_meetings):
         def parse_custom_site(self, *args, **kwargs):
             return []
 
+        def parse_onacos_site(self, *args, **kwargs):
+            return []
+
+        def parse_elements_site(self, *args, **kwargs):
+            return []
+
     monkeypatch.setattr(scraper, "CALENDAR_AVAILABLE", False, raising=False)
 
     def fake_parser():
         return EmptyParser()
 
     monkeypatch.setattr(scraper, "MoteParser", fake_parser)
+    monkeypatch.setattr(scraper, "PLAYWRIGHT_AVAILABLE", False, raising=False)
     monkeypatch.setattr(scraper, "parse_eigersund_meetings", lambda *args, **kwargs: [])
     mock_data_module = types.ModuleType("politikk_moter.mock_data")
     mock_data_module.get_mock_meetings = lambda: dummy_meetings
     monkeypatch.setitem(sys.modules, "politikk_moter.mock_data", mock_data_module)
     kommune_configs = [{"name": "Test kommune", "url": "https://example.com", "type": "acos"}]
 
-    meetings = scraper.scrape_all_meetings(kommune_configs=kommune_configs, calendar_sources=[])
+    meetings = scraper.scrape_all_meetings(kommune_configs=kommune_configs, calendar_sources=[], days_ahead=10)
 
     expected = [ensure_meeting(m) for m in dummy_meetings]
     actual = [ensure_meeting(m) for m in meetings]

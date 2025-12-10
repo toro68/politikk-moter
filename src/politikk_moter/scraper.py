@@ -20,6 +20,12 @@ from .models import Meeting, ensure_meeting
 # Import Playwright scraper for JavaScript-heavy sites
 from .reporting import format_slack_message
 
+CALENDAR_EXPECTED_LABELS = {
+    "turnus": {"name": "(Turnus-kalender)", "label": "turnus"},
+    "arrangementer_sa": {"name": "(Arrangementer-SA-kalender)", "label": "ovrige"},
+    "regional_kultur": {"name": "(Regional kulturkalender)", "label": "ovrige"},
+}
+
 # Import Playwright scraper for JavaScript-heavy sites
 try:
     from .playwright_scraper import scrape_with_playwright
@@ -93,6 +99,23 @@ def _expected_kommuner_by_batch(pipeline: PipelineConfig) -> Dict[str, List[str]
 
     if pipeline_names:
         mapping["alle"] = sorted(pipeline_names)
+
+    def _add_expected(label: str, name: str) -> None:
+        bucket = mapping.setdefault(label, [])
+        if name not in bucket:
+            bucket.append(name)
+
+    for source_id in pipeline.calendar_sources:
+        meta = CALENDAR_EXPECTED_LABELS.get(source_id)
+        if not meta:
+            continue
+        display_name = meta["name"]
+        target_label = meta.get("label") or "ovrige"
+        _add_expected(target_label, display_name)
+        _add_expected("alle", display_name)
+
+    for label in mapping:
+        mapping[label] = sorted(mapping[label])
 
     return mapping
 
@@ -546,55 +569,73 @@ class MoteParser:
         return unique
 
     def _parse_opengov_360_meetings(self, html_text: str, base_url: str, kommune_name: str) -> List[Dict]:
-        """Bruk regex for å hente møter fra opengov.360online.com-sider (Sandnes, Randaberg m.fl.)."""
-
-        pattern = re.compile(
-            r'<li[^>]*class="[^"]*boardLink[^"]*"[^>]*>\s*'
-            r'<a[^>]*href="(?P<href>[^"]+)"[^>]*>.*?'
-            r'<div[^>]*class="meetingName"[^>]*>\s*<span>(?P<name>.*?)</span>.*?'
-            r'<div[^>]*class="meetingDate"[^>]*>\s*<span>(?P<date>\d{1,2}[\.\-]\d{1,2}[\.\-]\d{4})</span>'
-            r'(?:\s*<span>(?P<time>[0-9:\.]+)</span>)?',
-            re.IGNORECASE | re.DOTALL,
-        )
+        """Bruk BeautifulSoup (med regex-fallback) for opengov.360online.com."""
 
         meetings: List[Dict] = []
+        soup = BeautifulSoup(html_text or "", "html.parser")
 
-        for match in pattern.finditer(html_text or ''):
-            href = html.unescape(match.group('href') or '').strip()
-            raw_title = html.unescape(match.group('name') or '').strip()
-            if not href or not raw_title:
-                continue
-
-            parsed_date = self.parse_date_from_text(match.group('date') or '')
+        def _append_meeting(title: str, date_str: str, time_str: Optional[str], href: str, raw: str) -> None:
+            parsed_date = self.parse_date_from_text(date_str) or self.parse_date_from_text(title)
             if not parsed_date:
-                continue
+                return
+            normalized_time = self.parse_time_from_text(time_str or "")
+            if not normalized_time:
+                normalized_time = self.parse_time_from_text(title)
 
-            time_fragment = (match.group('time') or '').replace('.', ':')
-            parsed_time = self.parse_time_from_text(time_fragment)
-            if not parsed_time:
-                parsed_time = self.parse_time_from_text(raw_title)
-
-            clean_title = re.sub(r'\(\s*\d{1,2}[\.\-]\d{1,2}[\.\-]\d{4}.*?\)$', '', raw_title).strip()
+            clean_title = title.strip()
+            clean_title = re.sub(r'\(.*?\)$', '', clean_title).strip()
             clean_title = re.sub(r'\s+\d{1,2}[\.\-]\d{1,2}[\.\-]\d{2,4}.*', '', clean_title).strip(' -:')
             clean_title = re.sub(r'\s*kl\.?\s*\d{1,2}[:\. ]\d{2}', '', clean_title, flags=re.IGNORECASE).strip()
             if not clean_title:
-                clean_title = raw_title or 'Politisk møte'
+                clean_title = title or "Politisk møte"
 
-            meeting = {
-                'title': clean_title[:100],
-                'date': parsed_date.strftime('%Y-%m-%d'),
-                'time': parsed_time,
-                'location': 'Ikke oppgitt',
-                'kommune': kommune_name,
-                'url': urljoin(base_url, href),
-                'raw_text': raw_title[:300],
-            }
-            meetings.append(meeting)
+            meetings.append(
+                {
+                    "title": clean_title[:100],
+                    "date": parsed_date.strftime("%Y-%m-%d"),
+                    "time": normalized_time,
+                    "location": "Ikke oppgitt",
+                    "kommune": kommune_name,
+                    "url": urljoin(base_url, href),
+                    "raw_text": raw[:300],
+                }
+            )
+
+        board_links = soup.select("li[class*='board']")
+        if board_links:
+            for li in board_links:
+                anchor = li.find("a")
+                href = anchor.get("href") if anchor else None
+                if not href:
+                    continue
+                name_el = li.select_one(".meetingName") or li.select_one("[class*='meetingName']")
+                date_el = li.select_one(".meetingDate") or li.select_one("[class*='meetingDate']")
+                raw_title = name_el.get_text(" ", strip=True) if name_el else anchor.get_text(" ", strip=True)
+                date_span = date_el.find_all("span") if date_el else []
+                explicit_date = date_span[0].get_text(strip=True) if date_span else date_el.get_text(" ", strip=True)
+                explicit_time = date_span[1].get_text(strip=True) if len(date_span) > 1 else None
+                _append_meeting(raw_title or "Politisk møte", explicit_date or "", explicit_time, href, li.get_text(" ", strip=True))
+
+        if not meetings:
+            pattern = re.compile(
+                r'<li[^>]*class="[^"]*boardLink[^"]*"[^>]*>\s*'
+                r'<a[^>]*href="(?P<href>[^"]+)"[^>]*>.*?'
+                r'<div[^>]*class="meetingName"[^>]*>\s*<span>(?P<name>.*?)</span>.*?'
+                r'<div[^>]*class="meetingDate"[^>]*>\s*<span>(?P<date>\d{1,2}[\.\-]\d{1,2}[\.\-]\d{4})</span>'
+                r'(?:\s*<span>(?P<time>[0-9:\.]+)</span>)?',
+                re.IGNORECASE | re.DOTALL,
+            )
+
+            for match in pattern.finditer(html_text or ""):
+                href = html.unescape(match.group("href") or "").strip()
+                raw_title = html.unescape(match.group("name") or "").strip()
+                explicit_time = (match.group("time") or "").replace(".", ":")
+                _append_meeting(raw_title, match.group("date") or "", explicit_time, href, raw_title)
 
         unique: List[Dict] = []
         seen = set()
         for meeting in meetings:
-            key = (meeting['date'], meeting['title'])
+            key = (meeting["date"], meeting["title"])
             if key in seen:
                 continue
             seen.add(key)
@@ -809,6 +850,8 @@ class MoteParser:
 def scrape_all_meetings(
     kommune_configs: Optional[Sequence[Dict]] = None,
     calendar_sources: Optional[Sequence[str]] = None,
+    *,
+    days_ahead: int = 10,
 ) -> List[Dict]:
     """Scraper møter for angitte kommuner og kalendere."""
     all_meetings: List[Dict] = []
@@ -824,11 +867,11 @@ def scrape_all_meetings(
             if 'get_calendar_meetings_for_sources' in globals() and callable(get_calendar_meetings_for_sources):  # type: ignore[name-defined]
                 calendar_meetings = get_calendar_meetings_for_sources(
                     aktive_kalendere,
-                    days_ahead=9,
+                    days_ahead=days_ahead,
                     test_mode=debug_mode,
                 )
             else:
-                calendar_meetings = get_calendar_meetings(days_ahead=9, test_mode=debug_mode)  # type: ignore[misc]
+                calendar_meetings = get_calendar_meetings(days_ahead=days_ahead, test_mode=debug_mode)  # type: ignore[misc]
             all_meetings.extend(calendar_meetings)
             print(f"Fant {len(calendar_meetings)} møter fra Google Calendar")
             # Diagnostic: list any meetings that originate from the turnus calendar
@@ -856,55 +899,89 @@ def scrape_all_meetings(
     # Separer sider basert på om de trenger Playwright
     js_heavy_sites: List[Dict] = []
     standard_sites: List[Dict] = []
+    retry_playwright_sites: List[Dict] = []
+    parser: Optional[MoteParser] = None
+
+    def _ensure_parser() -> MoteParser:
+        nonlocal parser
+        if parser is None:
+            parser = MoteParser()
+        return parser
+
+    def _scrape_with_requests(config: Dict) -> List[Dict]:
+        parser_instance = _ensure_parser()
+
+        if EIGERSUND_AVAILABLE and (
+            "eigersund" in config.get("url", "").lower()
+            or "eigersund" in config.get("name", "").lower()
+        ):
+            try:
+                print(f"🔎 Spesialparser for {config['name']}")
+                return parse_eigersund_meetings(config["url"], config["name"])
+            except Exception as exc:  # pragma: no cover - logging already helpful
+                print(f"⚠️  Eigersund parser-feil: {exc}")
+                return []
+
+        site_type = config.get("type")
+        try:
+            if site_type == "acos":
+                return parser_instance.parse_acos_site(config["url"], config["name"])
+            if site_type == "custom":
+                return parser_instance.parse_custom_site(config["url"], config["name"])
+            if site_type == "onacos":
+                return parser_instance.parse_onacos_site(config["url"], config["name"])
+            if site_type == "elements":
+                return parser_instance.parse_elements_site(config["url"], config["name"])
+            print(f"Ukjent sidetype: {site_type}")
+        except Exception as exc:  # pragma: no cover - network dependent
+            print(f"⚠️  Feil ved parsing av {config['name']}: {exc}")
+        return []
+
+    def _should_retry_with_playwright(config: Dict) -> bool:
+        url_value = (config.get('url') or '').lower()
+        return 'opengov.360online.com' in url_value or '360online.com/meetings' in url_value
 
     for kommune_config in kommuner:
         url_value = (kommune_config.get('url') or '').lower()
         # ACOS/Onacos/Elements, Digdem og andre JS-baserte innsynsider trenger Playwright
-        if (
-            kommune_config['type'] in ['elements', 'onacos', 'acos']
+        requires_playwright = (
+            kommune_config['type'] in ['elements', 'onacos']
             or 'innsynpluss' in url_value
             or 'digdem' in url_value
-        ):
+        )
+        if requires_playwright:
             js_heavy_sites.append(kommune_config)
         else:
             standard_sites.append(kommune_config)
     
     # Scrape standard sider med requests/BeautifulSoup
     if standard_sites:
-        parser = MoteParser()
         for kommune_config in standard_sites:
-            # Special-case: Eigersund uses a separate parser
-            if EIGERSUND_AVAILABLE and ('eigersund' in kommune_config.get('url','').lower() or 'eigersund' in kommune_config.get('name','').lower()):
-                try:
-                    print(f"🔎 Spesialparser for {kommune_config['name']}")
-                    meetings = parse_eigersund_meetings(kommune_config['url'], kommune_config['name'])
-                except Exception as e:
-                    print(f"⚠️  Eigersund parser-feil: {e}")
-                    meetings = []
-            else:
-                print(f"📄 Scraper {kommune_config['name']} (standard)...")
-
-                if kommune_config['type'] == 'acos':
-                    meetings = parser.parse_acos_site(kommune_config['url'], kommune_config['name'])
-                elif kommune_config['type'] == 'custom':
-                    meetings = parser.parse_custom_site(kommune_config['url'], kommune_config['name'])
-                else:
-                    print(f"Ukjent sidetype: {kommune_config['type']}")
-                    continue
+            print(f"📄 Scraper {kommune_config['name']} (standard)...")
+            meetings = _scrape_with_requests(kommune_config)
             # Legg på kilde-URL for hvert møte slik at Slack-meldingen kan linke tilbake
             for m in meetings:
                 if 'url' not in m or not m.get('url'):
                     m['url'] = kommune_config.get('url')
                 all_meetings.append(m)
             print(f"Fant {len(meetings)} møter fra {kommune_config['name']}")
-    
+            if not meetings and _should_retry_with_playwright(kommune_config):
+                retry_playwright_sites.append(kommune_config)
+
+    playwright_targets: List[Dict] = list(js_heavy_sites)
+    seen_names = {cfg['name'] for cfg in js_heavy_sites}
+    for cfg in retry_playwright_sites:
+        if cfg['name'] not in seen_names:
+            playwright_targets.append(cfg)
+            seen_names.add(cfg['name'])
+
     # Scrape JavaScript-tunge sider med Playwright
-    if js_heavy_sites and PLAYWRIGHT_AVAILABLE:
+    if playwright_targets and PLAYWRIGHT_AVAILABLE:
         print("\n🎭 Bruker Playwright for JavaScript-tunge sider...")
         try:
-            playwright_meetings = asyncio.run(scrape_with_playwright(js_heavy_sites))
+            playwright_meetings = asyncio.run(scrape_with_playwright(playwright_targets))
             # Sørg for at hvert møte fra Playwright også har en kilde-URL (basert på config)
-            name_to_url = {c['name']: c.get('url') for c in js_heavy_sites}
+            name_to_url = {c['name']: c.get('url') for c in playwright_targets}
             for m in playwright_meetings:
                 if 'url' not in m or not m.get('url'):
                     # Forsøk å mappe kommune-navn til konfig URL
@@ -913,8 +990,16 @@ def scrape_all_meetings(
             print(f"Playwright fant {len(playwright_meetings)} møter totalt")
         except Exception as e:
             print(f"Playwright-feil: {e}")
-    elif js_heavy_sites:
-        print("⚠️  Playwright ikke tilgjengelig for JavaScript-tunge sider")
+    elif playwright_targets:
+        print("⚠️  Playwright ikke tilgjengelig for JavaScript-tunge sider – faller tilbake til requests-basert parsing.")
+        for kommune_config in playwright_targets:
+            print(f"📄 Scraper {kommune_config['name']} (fallback)...")
+            meetings = _scrape_with_requests(kommune_config)
+            for m in meetings:
+                if 'url' not in m or not m.get('url'):
+                    m['url'] = kommune_config.get('url')
+                all_meetings.append(m)
+            print(f"Fant {len(meetings)} møter fra {kommune_config['name']} via fallback")
     
     # Hvis ingen møter ble funnet, bruk mock-data for demo
     if len(all_meetings) == 0:
@@ -1010,6 +1095,7 @@ def collect_meetings_for_pipeline(
     meetings = scrape_all_meetings(
         kommune_configs,
         pipeline.calendar_sources,
+        days_ahead=days_ahead,
     )
     filtered_meetings = filter_meetings_by_date_range(meetings, days_ahead=days_ahead)
 
