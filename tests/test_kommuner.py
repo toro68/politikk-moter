@@ -16,6 +16,7 @@ EXPECTED_KOMMUNER = {
     "Rogaland fylkeskommune": {"type": "elements", "groups": {"core", "playwright"}},
     "Sokndal kommune": {"type": "acos", "groups": {"core"}},
     "Bjerkreim kommune": {"type": "acos", "groups": {"core"}},
+    "Lund kommune": {"type": "onacos", "groups": {"core", "playwright"}},
     "Time kommune": {"type": "acos", "groups": {"core", "playwright", "turnus"}},
     "Klepp kommune": {"type": "custom", "groups": {"core", "turnus"}},
     "Hå kommune": {"type": "acos", "groups": {"core", "turnus"}},

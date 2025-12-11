@@ -76,6 +76,12 @@ KOMMUNE_CONFIGS: List[KommuneConfig] = [
         groups=("core",),
     ),
     KommuneConfig(
+        name="Lund kommune",
+        url="https://innsynpluss.onacos.no/lund/moteoversikt/",
+        type="onacos",
+        groups=("core", "playwright"),
+    ),
+    KommuneConfig(
         name="Time kommune",
         url="https://www.time.kommune.no/politikk/mote-og-saksdokument/moter-og-saksdokument/",
         type="acos",
