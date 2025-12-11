@@ -172,9 +172,9 @@ def _append_meetings_from_days(days, month, year, committee, link, kommune_name,
             detail_html = _DETAILS_CACHE.get(link)
             if detail_html:
                 txt = BeautifulSoup(detail_html, 'html.parser').get_text(separator='\n', strip=True)
-                m = re.search(r'kl\.?\s*([0-2]?\d[:\.][0-5]\d)', txt, re.IGNORECASE)
+                m = re.search(r'kl\.?\s*((?:[01]?\d|2[0-3])[:\.][0-5]\d)', txt, re.IGNORECASE)
                 if not m:
-                    m = re.search(r'\b([0-2]?\d[:\.][0-5]\d)\b', txt)
+                    m = re.search(r'\b((?:[01]?\d|2[0-3])[:\.][0-5]\d)\b', txt)
                 if m:
                     time_str = m.group(1).replace('.', ':')
                 loc_match = re.search(r"(Sted[:\s\-]*|Sted\:|Sted\s|Sted -|Sted:)\s*([^\n,]+)", txt, re.IGNORECASE)
