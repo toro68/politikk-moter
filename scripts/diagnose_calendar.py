@@ -1,7 +1,23 @@
-
 import os
 import sys
-from src.politikk_moter.calendar_integration import CALENDAR_SOURCES, _resolve_calendar_id, GoogleCalendarIntegration
+from pathlib import Path
+
+
+def _bootstrap_package() -> None:
+    """Ensure the packaged sources under ``src/`` are importable."""
+    root = Path(__file__).resolve().parents[1]
+    src_dir = root / "src"
+    if str(src_dir) not in sys.path and src_dir.exists():
+        sys.path.insert(0, str(src_dir))
+
+
+_bootstrap_package()
+
+from politikk_moter.calendar_integration import (  # noqa: E402
+    CALENDAR_SOURCES,
+    GoogleCalendarIntegration,
+    _resolve_calendar_id,
+)
 
 def check_env_vars():
     print("=== Checking Environment Variables ===")
