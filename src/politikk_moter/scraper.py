@@ -7,7 +7,7 @@ import html
 import os
 import re
 import sys
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Union
 from urllib.parse import urljoin
 
@@ -78,6 +78,57 @@ WEBHOOK_FALLBACK_ENVIRONMENTS = [
 ]
 
 SLACK_WEBHOOK_FALLBACK_FLAG_ENV = "SLACK_WEBHOOK_FALLBACK"
+
+_MONTHS_NB = {
+    "jan": 1,
+    "januar": 1,
+    "feb": 2,
+    "februar": 2,
+    "mar": 3,
+    "mars": 3,
+    "apr": 4,
+    "april": 4,
+    "mai": 5,
+    "jun": 6,
+    "juni": 6,
+    "jul": 7,
+    "juli": 7,
+    "aug": 8,
+    "august": 8,
+    "sep": 9,
+    "sept": 9,
+    "september": 9,
+    "okt": 10,
+    "oktober": 10,
+    "nov": 11,
+    "november": 11,
+    "des": 12,
+    "desember": 12,
+}
+
+_DATE_DMY_RE = re.compile(r"(\d{1,2})[\.\-/](\d{1,2})[\.\-/](\d{2,4})")
+_DATE_MONTHNAME_RE = re.compile(r"(\d{1,2})\.?\s+([A-Za-zæøåÆØÅ\.]{3,})\s+(\d{4})")
+_TIME_HHMM_RE = re.compile(r"(?:kl\.?\s*)?(\d{1,2}):(\d{2})", re.IGNORECASE)
+_TIME_HH_DOT_MM_RE = re.compile(r"(?:kl\.?\s*)(\d{1,2})(?:[\.:](\d{2}))?", re.IGNORECASE)
+_TIME_KLOKKA_RE = re.compile(r"(?:klokka)\s*(\d{1,2})", re.IGNORECASE)
+
+
+def _requires_playwright_for_config(config: Mapping[str, object]) -> bool:
+    """Return True when a kommune config needs Playwright to render meeting data."""
+    url_value = str(config.get("url") or "").lower()
+    site_type = str(config.get("type") or "").lower()
+
+    # Some ACOS meeting calendar pages render content via a JS app (SPA).
+    if site_type == "acos" and "politisk-motekalender" in url_value:
+        return True
+    if site_type == "acos" and "/innsyn/" in url_value:
+        return True
+
+    return (
+        site_type in {"elements", "onacos"}
+        or "innsynpluss" in url_value
+        or "digdem" in url_value
+    )
 
 
 def _is_truthy_env(env_name: str) -> bool:
@@ -166,7 +217,7 @@ class MoteParser:
             return None
 
         # 1) dd.mm.yyyy eller dd/mm/yyyy eller dd-mm-yyyy eller dd.mm.yy
-        m = re.search(r"(\d{1,2})[\.\-/](\d{1,2})[\.\-/](\d{2,4})", text)
+        m = _DATE_DMY_RE.search(text)
         if m:
             day, month, year = m.groups()
             y = int(year)
@@ -178,18 +229,12 @@ class MoteParser:
                 pass
 
         # 2) Dag månednavn år (eks. 20. august 2025 eller 20 august 2025)
-        months = {
-            'jan':1,'januar':1,'feb':2,'februar':2,'mar':3,'mars':3,'apr':4,'april':4,
-            'mai':5,'jun':6,'juni':6,'jul':7,'juli':7,'aug':8,'august':8,'sep':9,'sept':9,'september':9,
-            'okt':10,'oktober':10,'nov':11,'november':11,'des':12,'desember':12
-        }
-    # finn pattern: (dag måned år)
-        m2 = re.search(r"(\d{1,2})\.?\s+([A-Za-zæøåÆØÅ\.]{3,})\s+(\d{4})", text)
+        m2 = _DATE_MONTHNAME_RE.search(text)
         if m2:
             day = int(m2.group(1))
             mon_str = m2.group(2).lower().rstrip('.')
             year = int(m2.group(3))
-            mon = months.get(mon_str[:3]) or months.get(mon_str)
+            mon = _MONTHS_NB.get(mon_str[:3]) or _MONTHS_NB.get(mon_str)
             if mon:
                 try:
                     return datetime(year, mon, day)
@@ -203,7 +248,7 @@ class MoteParser:
         if not text:
             return None
         # Foretrekk tider med kolon eller 'kl' prefiks; unngå å tolke dd.mm som tid
-        m = re.search(r'(?:kl\.?\s*)?(\d{1,2}):(\d{2})', text)
+        m = _TIME_HHMM_RE.search(text)
         if m:
             h, mi = m.groups()
             try:
@@ -213,7 +258,7 @@ class MoteParser:
                     return f"{hh:02d}:{mm:02d}"
             except ValueError:
                 pass
-        m = re.search(r'(?:kl\.?\s*)(\d{1,2})(?:[\.:](\d{2}))?', text, re.IGNORECASE)
+        m = _TIME_HH_DOT_MM_RE.search(text)
         if m:
             h, mi = m.groups()
             minute = mi or '00'
@@ -224,7 +269,7 @@ class MoteParser:
                     return f"{hh:02d}:{mm:02d}"
             except ValueError:
                 pass
-        m = re.search(r'(?:klokka)\s*(\d{1,2})', text, re.IGNORECASE)
+        m = _TIME_KLOKKA_RE.search(text)
         if m:
             h = m.group(1)
             try:
@@ -946,16 +991,19 @@ def scrape_all_meetings(
 
     def _should_retry_with_playwright(config: Dict) -> bool:
         url_value = (config.get('url') or '').lower()
-        return 'opengov.360online.com' in url_value or '360online.com/meetings' in url_value
+        if 'opengov.360online.com' in url_value or '360online.com/meetings' in url_value:
+            return True
+        # Some ACOS "innsyn" pages render meetings via client-side JS (SPA),
+        # so the initial requests/BeautifulSoup scrape returns an empty shell.
+        return (
+            (config.get("type") == "acos")
+            and ("politisk-motekalender" in url_value or "politiske-moter" in url_value)
+        )
 
     for kommune_config in kommuner:
         url_value = (kommune_config.get('url') or '').lower()
         # ACOS/Onacos/Elements, Digdem og andre JS-baserte innsynsider trenger Playwright
-        requires_playwright = (
-            kommune_config['type'] in ['elements', 'onacos']
-            or 'innsynpluss' in url_value
-            or 'digdem' in url_value
-        )
+        requires_playwright = _requires_playwright_for_config(kommune_config)
         if requires_playwright:
             js_heavy_sites.append(kommune_config)
         else:
@@ -1033,7 +1081,7 @@ def filter_meetings_by_date_range(
 
     for meeting in normalized:
         try:
-            meeting_date = datetime.strptime(meeting.date, '%Y-%m-%d').date()
+            meeting_date = date.fromisoformat(meeting.date)
             if today <= meeting_date <= end_date:
                 filtered_meetings.append(meeting)
         except ValueError:
@@ -1225,7 +1273,7 @@ def send_to_slack(
     if is_test_mode and not force_send:
         print("🚫 Test-modus: Sender IKKE til Slack (bruk --force for å overstyre)")
         if resolved_webhook:
-            print(f"Webhook URL: {resolved_webhook[:50]}...")
+            print("Webhook URL: [redacted]")
         print("Melding som VILLE blitt sendt:")
         print("=" * 40)
         print(message)

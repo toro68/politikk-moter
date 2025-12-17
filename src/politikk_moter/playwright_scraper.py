@@ -10,7 +10,7 @@ from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 import re
 from urllib.parse import urljoin
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 from typing import List, Dict, Optional
 
@@ -1014,7 +1014,7 @@ async def scrape_with_playwright(kommune_urls: List[Dict]) -> List[Dict]:
                         filt = []
                         for m in meetings:
                             try:
-                                md = datetime.strptime(m['date'], '%Y-%m-%d').date()
+                                md = date.fromisoformat(m['date'])
                                 if today <= md <= end_date:
                                     filt.append(m)
                             except Exception:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime
+from datetime import date
 from typing import Mapping, Sequence, Union, Optional
 
 from .models import Meeting, ensure_meeting
@@ -36,7 +36,7 @@ def format_slack_message(
     current_date = None
     kommune_counts = defaultdict(int)
     for meeting in normalized_meetings:
-        meeting_date = datetime.strptime(meeting.date, '%Y-%m-%d')
+        meeting_date = date.fromisoformat(meeting.date)
 
         # Ny dato-overskrift
         if current_date != meeting.date:
