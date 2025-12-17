@@ -94,6 +94,12 @@ KOMMUNE_CONFIGS: List[KommuneConfig] = [
         groups=("core", "turnus"),
     ),
     KommuneConfig(
+        name="Gjesdal kommune",
+        url="https://opengov.360online.com/Meetings/GJESDAL",
+        type="custom",
+        groups=("core",),
+    ),
+    KommuneConfig(
         name="Hå kommune",
         url="https://www.ha.no/politikk-og-samfunnsutvikling/mote-og-sakspapir/",
         type="acos",

@@ -19,6 +19,7 @@ EXPECTED_KOMMUNER = {
     "Lund kommune": {"type": "onacos", "groups": {"core", "playwright"}},
     "Time kommune": {"type": "acos", "groups": {"core", "playwright", "turnus"}},
     "Klepp kommune": {"type": "custom", "groups": {"core", "turnus"}},
+    "Gjesdal kommune": {"type": "custom", "groups": {"core"}},
     "Hå kommune": {"type": "acos", "groups": {"core", "turnus"}},
     "Sola kommune": {"type": "onacos", "groups": {"core", "playwright", "turnus"}},
     "Bymiljøpakken": {"type": "custom", "groups": {"core"}},
