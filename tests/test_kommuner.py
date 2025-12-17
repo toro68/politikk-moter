@@ -19,7 +19,8 @@ EXPECTED_KOMMUNER = {
     "Lund kommune": {"type": "onacos", "groups": {"core", "playwright"}},
     "Time kommune": {"type": "acos", "groups": {"core", "playwright", "turnus"}},
     "Klepp kommune": {"type": "custom", "groups": {"core", "turnus"}},
-    "Gjesdal kommune": {"type": "custom", "groups": {"core"}},
+    "Gjesdal kommune": {"type": "custom", "groups": {"core", "turnus"}},
+    "Kvitsøy kommune": {"type": "custom", "groups": {"core", "turnus"}},
     "Hå kommune": {"type": "acos", "groups": {"core", "turnus"}},
     "Sola kommune": {"type": "onacos", "groups": {"core", "playwright", "turnus"}},
     "Bymiljøpakken": {"type": "custom", "groups": {"core"}},
@@ -57,8 +58,10 @@ def test_get_kommune_configs_respects_groups() -> None:
     turnus = get_kommune_configs(["turnus"])
     turnus_names = {cfg["name"] for cfg in turnus}
     assert turnus_names == {
+        "Gjesdal kommune",
         "Hå kommune",
         "Klepp kommune",
+        "Kvitsøy kommune",
         "Sandnes kommune",
         "Randaberg kommune",
         "Sola kommune",
