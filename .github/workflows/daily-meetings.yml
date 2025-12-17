@@ -6,6 +6,10 @@ on:
     - cron: '30 4 * * 1-5'
   workflow_dispatch:  # Tillat manuell kjøring
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   send-meeting-digest:
     runs-on: ubuntu-latest
@@ -18,8 +22,18 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: '3.11'
+        cache: 'pip'
+        cache-dependency-path: 'requirements.txt'
+
+    - name: Cache Playwright browsers
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${{ runner.os }}-ms-playwright-${{ hashFiles('requirements.txt') }}
     
     - name: Install dependencies
+      env:
+        PLAYWRIGHT_BROWSERS_PATH: ~/.cache/ms-playwright
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
@@ -32,6 +46,7 @@ jobs:
         GOOGLE_CALENDAR_TURNUS_ID: ${{ secrets.GOOGLE_CALENDAR_TURNUS_ID }}
         GOOGLE_CALENDAR_REGIONAL_KULTUR_ID: ${{ secrets.GOOGLE_CALENDAR_REGIONAL_KULTUR_ID }}
         ENABLE_CALENDAR: 'true'
+        PLAYWRIGHT_BROWSERS_PATH: ~/.cache/ms-playwright
       run: |
         python scraper.py
     
