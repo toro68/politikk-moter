@@ -1,0 +1,35 @@
+name: Test Slack webhook
+
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: "Slack message text to send"
+        required: false
+        default: "Test: dagsorden GitHub Actions webhook fungerer"
+
+jobs:
+  test_slack:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate Slack secret
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          if [ -z "${SLACK_WEBHOOK_URL}" ]; then
+            echo "Missing secret: SLACK_WEBHOOK_URL"
+            exit 1
+          fi
+
+      - name: Post test message to Slack
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          MESSAGE: ${{ inputs.message }}
+        run: |
+          payload=$(python - <<'PY'
+          import json, os
+          print(json.dumps({"text": os.environ.get("MESSAGE", "Test: Slack webhook")}))
+          PY
+          )
+          curl -sS -X POST -H 'Content-type: application/json' --data "${payload}" "${SLACK_WEBHOOK_URL}"
