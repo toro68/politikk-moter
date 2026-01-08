@@ -8,6 +8,7 @@ møteindikatorer (datoer eller kjente møteord).
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass
 from typing import List, Sequence
@@ -15,6 +16,12 @@ from typing import List, Sequence
 import pytest
 import requests
 from bs4 import BeautifulSoup
+
+
+def _is_truthy_env(env_name: str) -> bool:
+    """Return True when env var exists with a truthy value."""
+    value = os.getenv(env_name, "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
 
 
 @dataclass(frozen=True)
@@ -62,6 +69,9 @@ def _find_dates(text: str) -> List[str]:
 @pytest.mark.parametrize("case", TEST_CASES, ids=lambda c: c.kommune)
 def test_jaerkommune_meeting_pages_expose_data(case: KommuneCase) -> None:
     """Sjekk at vi får sensibel møteinformasjon fra kommunenettstedet."""
+    if not _is_truthy_env("RUN_NETWORK_TESTS"):
+        pytest.skip("Nettverkstest: sett RUN_NETWORK_TESTS=1 for å kjøre.")
+
     session = requests.Session()
     session.headers.update(
         {
