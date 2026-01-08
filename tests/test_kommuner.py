@@ -26,7 +26,7 @@ EXPECTED_KOMMUNER = {
     "Bymiljøpakken": {"type": "custom", "groups": {"core"}},
     "Eigersund kommune": {"type": "onacos", "groups": {"core", "playwright"}},
     "Sandnes kommune": {"type": "custom", "groups": {"core", "turnus", "extended"}},
-    "Randaberg kommune": {"type": "acos", "groups": {"extended", "turnus"}},
+    "Randaberg kommune": {"type": "custom", "groups": {"extended", "turnus"}},
     "Stavanger kommune": {"type": "custom", "groups": {"core", "turnus"}},
 }
 
