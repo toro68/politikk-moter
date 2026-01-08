@@ -17,6 +17,7 @@ def format_slack_message(
     *,
     heading_suffix: Optional[str] = None,
     expected_kommuner: Optional[Sequence[str]] = None,
+    kommune_urls: Optional[Mapping[str, str]] = None,
 ) -> str:
     """Render a Slack message for an iterable of meetings."""
     normalized = [ensure_meeting(m) for m in meetings]
@@ -77,6 +78,12 @@ def format_slack_message(
         for kommune in sorted(kommune_counts):
             count = kommune_counts[kommune]
             label = "møte" if count == 1 else "møter"
-            message += f"• {kommune}: {count} {label}\n"
+            display_kommune = kommune
+            if kommune_urls:
+                url = kommune_urls.get(kommune)
+                if url:
+                    display_kommune = f"<{url}|{kommune}>"
+
+            message += f"• {display_kommune}: {count} {label}\n"
 
     return message

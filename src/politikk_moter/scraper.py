@@ -1178,6 +1178,11 @@ def run_pipeline(
     normalized_meetings = [ensure_meeting(meeting) for meeting in meetings]
     batches = build_slack_batches(normalized_meetings)
     expected_by_label = _expected_kommuner_by_batch(pipeline)
+    kommune_urls = {
+        config["name"]: config["url"]
+        for config in get_kommune_configs(pipeline.kommune_groups)
+        if config.get("name") and config.get("url")
+    }
 
     if debug_mode:
         print("🎭 DEBUG-MODUS: Viser Slack-meldinger uten å sende")
@@ -1191,6 +1196,7 @@ def run_pipeline(
                     batch,
                     heading_suffix=suffix,
                     expected_kommuner=expected,
+                    kommune_urls=kommune_urls,
                 )
             )
             print("-" * 50)
@@ -1207,6 +1213,7 @@ def run_pipeline(
             batch,
             heading_suffix=suffix,
             expected_kommuner=expected,
+            kommune_urls=kommune_urls,
         )
         target_env = pipeline.batch_webhook_envs.get(label, pipeline.slack_webhook_env)
 

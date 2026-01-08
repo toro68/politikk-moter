@@ -125,6 +125,18 @@ def test_format_slack_message_summarizes_multiple_kommuner():
     assert "• Strand kommune: 1 møte" in message
 
 
+def test_format_slack_message_links_summary_when_urls_provided():
+    message = scraper.format_slack_message(
+        [],
+        expected_kommuner=["Sauda kommune", "(Turnus-kalender)"],
+        kommune_urls={"Sauda kommune": "https://example.com/sauda"},
+    )
+
+    assert "*Oppsummering per kommune*" in message
+    assert "• <https://example.com/sauda|Sauda kommune>: 0 møter" in message
+    assert "• (Turnus-kalender): 0 møter" in message
+
+
 def test_split_meetings_for_turnus_uses_named_kommuner():
     meetings = [
         ensure_meeting({"title": "Turnus", "date": "2025-01-01", "kommune": "Stavanger kommune"}),
