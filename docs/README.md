@@ -6,14 +6,15 @@ Automatisk scraping og daglige Slack-meldinger for politiske møter fra kommuner
 
 ### ✅ Fullført
 - **Slack-integrasjon**: Sender daglige meldinger til Slack med formaterte møtelister
-- **GitHub Actions**: Automatisk kjøring hver dag kl. 07:00 (CET)
+- **GitHub Actions**: Automatisk kjøring mandag–fredag kl. 06:30 norsk tid (04:30 UTC)
 - **Playwright-støtte**: Kan scrape JavaScript-tunge sider som Elements Cloud
 - **Fallback-system**: Bruker mock-data når ingen møter finnes
 - **Alle ønskede kilder**:
   - ✅ Bymiljøpakken.no (106 møter funnet)
   - ✅ Rogaland fylkeskommune via Elements Cloud (8 møter funnet)
+  - ✅ Ferde via Elements Cloud
   - ✅ Alle kommunesider (standard ACOS/Onacos-støtte)
-- **Konfigurerbare pipelines**: Flere Slack-kanaler kan ha egne kommuner og kalendere
+- **Én aktiv pipeline**: Standardoppsett som sender to batcher til samme Slack-webhook
 
 ### 📊 Nåværende resultater
 ```
@@ -22,34 +23,73 @@ Rogaland fylkeskommune: 8 møter funnet via Playwright
 Kommunesider: 0 møter (ingen publiserte møter for neste periode)
 ```
 
-### � Fallback-logikk
+### 🔁 Fallback-logikk
 Når ingen møter finnes i de neste 10 dagene, brukes realistiske mock-data som inkluderer alle ønskede kilder. Dette sikrer at Slack-meldingen alltid er meningsfull.  
 
 ## Hvordan det fungerer
 
 1. **Hybrid scraping**: Requests/BeautifulSoup for standard sider, Playwright for JavaScript-tunge
 2. **Fallback**: Hvis scraping feiler, brukes mock-data for demo/testing
-3. **GitHub Actions**: Kjører automatisk hver dag kl. 08:00
+3. **GitHub Actions**: Kjører automatisk mandag–fredag
 4. **Sikker Slack**: Test-modus hindrer utilsiktet sending, må eksplisitt aktiveres
 
 ## Kommuner som dekkes
 
 - Sauda kommune ✅ (ACOS)
-- Strand kommune ✅ (ACOS)  
+- Strand kommune ✅ (ACOS)
 - Suldal kommune ✅ (ACOS)
 - Hjelmeland kommune ✅ (ACOS)
 - Sirdal kommune 🎭 (Onacos + Playwright)
+- Lund kommune 🎭 (Onacos + Playwright)
 - Sokndal kommune ✅ (ACOS)
 - Bjerkreim kommune ✅ (ACOS)
+- Eigersund kommune ✅ (Onacos, egen parser)
+- Time kommune ✅ (ACOS)
+- Klepp kommune ✅ (Custom / 360online)
+- Gjesdal kommune ✅ (Custom / 360online)
+- Kvitsøy kommune ✅ (Custom / 360online)
+- Hå kommune ✅ (ACOS)
+- Sola kommune 🎭 (Onacos + Playwright)
+- Stavanger kommune 🎭 (Digdem + Playwright)
+- Sandnes kommune ✅ (Custom / 360online)
 - Bymiljøpakken ✅ (Custom)
 - Rogaland fylkeskommune 🎭 (Elements Cloud + Playwright)
+- Ferde 🎭 (Elements Cloud + Playwright)
 
 ✅ = Standard scraping  
 🎭 = Playwright-basert scraping
 
+## Kildelenker
+
+### Nord-Jæren og Jæren (turnus)
+
+- Stavanger kommune: <https://stavanger-elm.digdem.no/motekalender>
+- Sandnes kommune: <https://opengov.360online.com/Meetings/SANDNESKOMMUNE>
+- Sola kommune: <https://nyttinnsyn.sola.kommune.no/wfinnsyn.ashx?response=moteplan&>
+- Time kommune: <https://www.time.kommune.no/politikk/mote-og-saksdokument/moter-og-saksdokument/>
+- Klepp kommune: <https://opengov.360online.com/Meetings/KLEPP>
+- Gjesdal kommune: <https://opengov.360online.com/Meetings/GJESDAL>
+- Kvitsøy kommune: <https://opengov.360online.com/Meetings/KVITSOY>
+- Hå kommune: <https://www.ha.no/politikk-og-samfunnsutvikling/mote-og-sakspapir/>
+
+### Ryfylke, Dalane
+
+- Rogaland fylkeskommune: <https://prod01.elementscloud.no/publikum/971045698/Dmb>
+- Ferde: <https://prod02.elementscloud.no/publikum/918012745_PROD-918012745/DmbBoard/6>
+- Sauda kommune: <https://www.sauda.kommune.no/innsyn/politiske-moter/>
+- Strand kommune: <https://www.strand.kommune.no/tjenester/politikk-innsyn-og-medvirkning/politiske-moter-og-sakspapirer/politisk-motekalender/>
+- Suldal kommune: <https://www.suldal.kommune.no/innsyn/politiske-moter/>
+- Hjelmeland kommune: <https://www.hjelmeland.kommune.no/politikk/moteplan-og-sakspapir/innsyn-moteplan/>
+- Sirdal kommune: <https://innsynpluss.onacos.no/sirdal/moteoversikt/>
+- Lund kommune: <https://innsynpluss.onacos.no/lund/moteoversikt/>
+- Eigersund kommune: <https://innsyn.onacos.no/eigersund/mote/wfinnsyn.ashx?response=moteplan&>
+- Sokndal kommune: <https://www.sokndal.kommune.no/innsyn/moteoversikt/>
+- Bjerkreim kommune: <https://www.bjerkreim.kommune.no/innsyn/moteplan-og-sakslister/>
+- Bymiljøpakken: <https://bymiljopakken.no/moter/>
+
 ## Slack-kanaler
 
-Hver pipeline sender to separate meldinger ("Nord-Jæren og Jæren" og "Ryfylke, Dalane") for å holde møtene sortert. Som standard går begge meldingene til samme Slack-kanal via `SLACK_WEBHOOK_URL`.
+Standardoppsettet har én pipeline (`standard`) som sender to separate meldinger ("Nord-Jæren og Jæren" og "Ryfylke, Dalane") for å holde møtene sortert. Som standard går begge meldingene til samme Slack-kanal via `SLACK_WEBHOOK_URL`.
 
 Ønsker du å sende batchene til ulike kanaler, kan du gi hver batch sin egen webhook ved å oppdatere `batch_webhook_envs` i `src/politikk_moter/pipeline_config.py` og legge til de nye hemmelighetene (f.eks. `SLACK_WEBHOOK_URL_TURNUS` og `SLACK_WEBHOOK_URL_OVRIGE`).
 
@@ -136,7 +176,7 @@ python playwright_scraper.py
 1. Legg til følgende secrets:
 
   - `SLACK_WEBHOOK_URL` (obligatorisk – brukes for begge meldinger som standard)
-  - `SLACK_WEBHOOK_URL_UTVIDET` (kun hvis den utvidede kanalen i `pipeline_config.py` skal brukes)
+  - `SLACK_WEBHOOK_URL_UTVIDET` (kun hvis du aktiverer den utvidede pipelinen i `src/politikk_moter/pipeline_config.py`)
 
 1. (Valgfritt) Legg til ekstra secrets dersom du ønsker egne kanaler for turnus og øvrige batcher, og referer til dem i `batch_webhook_envs`
 
@@ -181,7 +221,7 @@ python scraper.py
 
 Workflow kjører:
 
-- **Automatisk**: Hver dag kl. 08:00 (norsk tid)
+- **Automatisk**: Mandag–fredag kl. 06:30 norsk tid (04:30 UTC)
 - **Manuelt**: Via "Actions"-fanen → "Run workflow"
 
 ## Feilsøking
@@ -205,7 +245,7 @@ Workflow kjører:
 
 ### Legge til flere kommuner
 
-Oppdater `KOMMUNE_CONFIGS` i `src/politikk_moter/kommuner.py` og legg kommunen inn i riktig gruppe (`core`, `extended`, osv.). Nye kommuner blir tilgjengelige for alle pipelines som peker på gruppen.
+Oppdater `KOMMUNE_CONFIGS` i `src/politikk_moter/kommuner.py` og legg kommunen inn i riktig gruppe (`core`, `extended`, osv.). Nye kommuner blir tilgjengelige for `standard`-pipelinen (og eventuelle andre pipelines du aktiverer) som peker på gruppen.
 
 ### Ny Slack-kanal / pipeline
 
@@ -217,7 +257,7 @@ Rediger cron i `.github/workflows/daily-meetings.yml`:
 
 ```yaml
 schedule:
-  - cron: '0 6 * * *'  # UTC tid (add 1-2t for norsk tid)
+  - cron: '30 4 * * 1-5'  # 04:30 UTC = 06:30 norsk tid (sommer)
 ```
 
 ### Endre antall dager

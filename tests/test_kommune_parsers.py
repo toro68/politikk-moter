@@ -52,7 +52,7 @@ ONACOS_KOMMUNER = [
     cfg.name for cfg in KOMMUNE_CONFIGS if cfg.type == "onacos" and "eigersund" not in cfg.name.lower()
 ]
 EIGERSUND_NAME = next(cfg.name for cfg in KOMMUNE_CONFIGS if "eigersund" in cfg.name.lower())
-ELEMENTS_NAME = next(cfg.name for cfg in KOMMUNE_CONFIGS if cfg.type == "elements")
+ELEMENTS_NAME = next(cfg.name for cfg in KOMMUNE_CONFIGS if cfg.name == "Rogaland fylkeskommune")
 
 
 @pytest.mark.parametrize("kommune_name", ACOS_KOMMUNER)

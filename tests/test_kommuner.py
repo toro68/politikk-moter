@@ -14,6 +14,7 @@ EXPECTED_KOMMUNER = {
     "Hjelmeland kommune": {"type": "acos", "groups": {"core"}},
     "Sirdal kommune": {"type": "onacos", "groups": {"core", "playwright"}},
     "Rogaland fylkeskommune": {"type": "elements", "groups": {"core", "playwright"}},
+    "Ferde": {"type": "elements", "groups": {"core", "playwright"}},
     "Sokndal kommune": {"type": "acos", "groups": {"core"}},
     "Bjerkreim kommune": {"type": "acos", "groups": {"core"}},
     "Lund kommune": {"type": "onacos", "groups": {"core", "playwright"}},

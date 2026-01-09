@@ -64,6 +64,12 @@ KOMMUNE_CONFIGS: List[KommuneConfig] = [
         groups=("core", "playwright"),
     ),
     KommuneConfig(
+        name="Ferde",
+        url="https://prod02.elementscloud.no/publikum/918012745_PROD-918012745/DmbBoard/6",
+        type="elements",
+        groups=("core", "playwright"),
+    ),
+    KommuneConfig(
         name="Sokndal kommune",
         url="https://www.sokndal.kommune.no/innsyn/moteoversikt/",
         type="acos",

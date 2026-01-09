@@ -33,6 +33,7 @@ DEFAULT_PIPELINES: List[PipelineConfig] = [
         kommune_groups=("core", "extended"),
         calendar_sources=("regional_kultur",),
         slack_webhook_env="SLACK_WEBHOOK_URL_UTVIDET",
+        enabled=False,
     ),
 ]
 
