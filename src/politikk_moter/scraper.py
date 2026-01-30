@@ -129,7 +129,13 @@ def _requires_playwright_for_config(config: Mapping[str, object]) -> bool:
     # Some ACOS meeting calendar pages render content via a JS app (SPA).
     if site_type == "acos" and "politisk-motekalender" in url_value:
         return True
-    if site_type == "acos" and "/innsyn/" in url_value:
+    if site_type == "acos" and (
+        "/innsyn/" in url_value
+        or "innsyn" in url_value
+        or "mote-og-saksdokument" in url_value
+        or "mote-og-sakspapir" in url_value
+        or "politiske-moter-og-sakspapirer" in url_value
+    ):
         return True
 
     return (
@@ -1022,7 +1028,14 @@ def scrape_all_meetings(
         # so the initial requests/BeautifulSoup scrape returns an empty shell.
         return (
             (config.get("type") == "acos")
-            and ("politisk-motekalender" in url_value or "politiske-moter" in url_value)
+            and (
+                "politisk-motekalender" in url_value
+                or "politiske-moter" in url_value
+                or "innsyn" in url_value
+                or "mote-og-saksdokument" in url_value
+                or "mote-og-sakspapir" in url_value
+                or "politiske-moter-og-sakspapirer" in url_value
+            )
         )
 
     for kommune_config in kommuner:
