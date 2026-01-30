@@ -59,7 +59,8 @@ class PlaywrightMoteParser:
 
     def _normalize_time_str(self, hh: str, mm: str) -> Optional[str]:
         try:
-            hh_i = int(hh); mm_i = int(mm)
+            hh_i = int(hh)
+            mm_i = int(mm)
             if 0 <= hh_i < 24 and 0 <= mm_i < 60:
                 return f"{hh_i:02d}:{mm_i:02d}"
         except Exception:
@@ -866,7 +867,8 @@ class PlaywrightMoteParser:
                 aria = element.get('aria-label')
                 title_attr = element.get('title')
             except Exception:
-                aria = None; title_attr = None
+                aria = None
+                title_attr = None
             if aria:
                 candidate_texts.insert(0, aria)
             if title_attr:
@@ -876,7 +878,8 @@ class PlaywrightMoteParser:
                     a = child.get('aria-label')
                     t = child.get('title')
                 except Exception:
-                    a = None; t = None
+                    a = None
+                    t = None
                 if a:
                     candidate_texts.append(a)
                 if t:

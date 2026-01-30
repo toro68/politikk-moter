@@ -5,48 +5,41 @@ Test-skript for å hente alle møter fra Eigersund kommune.
 - Ellers bruker MoteParser.parse_onacos_site som fallback.
 """
 import asyncio
-import sys
 import json
+import logging
 import os
+import sys
 
-# Sørg for at src/ er i sys.path slik at vi kan importere politikk_moter-pakken
-repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-src_dir = os.path.join(repo_root, 'src')
-if src_dir not in sys.path:
-    sys.path.insert(0, src_dir)
 
-from politikk_moter.scraper import KOMMUNE_URLS, MoteParser, PLAYWRIGHT_AVAILABLE
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger(__name__)
 
-# Finn Eigersund-konfig
-eigersund_cfg = None
-for c in KOMMUNE_URLS:
-    if 'eigersund' in c.get('name', '').lower() or 'eigersund' in c.get('url', '').lower():
-        eigersund_cfg = c
-        break
 
-if not eigersund_cfg:
-    print('❌ Fant ikke Eigersund-konfigurasjon i KOMMUNE_URLS')
-    sys.exit(2)
+def _bootstrap_package() -> None:
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    src_dir = os.path.join(repo_root, 'src')
+    if src_dir not in sys.path:
+        sys.path.insert(0, src_dir)
 
-print('🔎 Tester scraping for Eigersund:')
-print(json.dumps(eigersund_cfg, indent=2, ensure_ascii=False))
+
 
 async def run_playwright(cfg):
     try:
         from politikk_moter.playwright_scraper import scrape_with_playwright
     except Exception as e:
-        print('⚠️  Playwright-scraper ikke tilgjengelig:', e)
+        logger.warning('⚠️  Playwright-scraper ikke tilgjengelig: %s', e)
         return None
     try:
         results = await scrape_with_playwright([cfg])
         return results
     except Exception as e:
-        print('❌ Playwright scraping feilet:', e)
+        logger.error('❌ Playwright scraping feilet: %s', e)
         return None
 
 
-def run_fallback_parse(cfg):
-    parser = MoteParser()
+
+def run_fallback_parse(cfg, parser_cls):
+    parser = parser_cls()
     typ = cfg.get('type')
     url = cfg.get('url')
     name = cfg.get('name')
@@ -60,30 +53,59 @@ def run_fallback_parse(cfg):
         return parser.parse_custom_site(url, name)
 
 
+
 def print_meetings(meetings):
     if not meetings:
-        print('⚠️  Ingen møter funnet')
+        logger.warning('⚠️  Ingen møter funnet')
         return
-    print(f'✅ Fant {len(meetings)} møter:')
+    logger.info('✅ Fant %s møter:', len(meetings))
     for m in meetings:
-        print(f" - {m.get('date')} {m.get('time','hele dagen')} - {m.get('title')} ({m.get('kommune')})")
+        logger.info(
+            " - %s %s - %s (%s)",
+            m.get('date'),
+            m.get('time', 'hele dagen'),
+            m.get('title'),
+            m.get('kommune'),
+        )
         if m.get('url'):
-            print(f"     URL: {m.get('url')}")
+            logger.info("     URL: %s", m.get('url'))
 
 
-if __name__ == '__main__':
+
+def main():
+    _bootstrap_package()
+    from politikk_moter.scraper import KOMMUNE_URLS, MoteParser, PLAYWRIGHT_AVAILABLE
+
+    # Finn Eigersund-konfig
+    eigersund_cfg = None
+    for c in KOMMUNE_URLS:
+        if 'eigersund' in c.get('name', '').lower() or 'eigersund' in c.get('url', '').lower():
+            eigersund_cfg = c
+            break
+
+    if not eigersund_cfg:
+        logger.error('❌ Fant ikke Eigersund-konfigurasjon i KOMMUNE_URLS')
+        sys.exit(2)
+
+    logger.info('🔎 Tester scraping for Eigersund:')
+    logger.info("%s", json.dumps(eigersund_cfg, indent=2, ensure_ascii=False))
+
     # Forsøk Playwright hvis tilgjengelig
     meetings = None
     if PLAYWRIGHT_AVAILABLE:
-        print('🎭 Playwright tilgjengelig — prøver Playwright-ruten')
+        logger.info('🎭 Playwright tilgjengelig — prøver Playwright-ruten')
         try:
             meetings = asyncio.run(run_playwright(eigersund_cfg))
         except Exception as e:
-            print('⚠️  Feil ved kjøring av Playwright:', e)
+            logger.warning('⚠️  Feil ved kjøring av Playwright: %s', e)
             meetings = None
 
     if not meetings:
-        print('🔁 Fallback: bruker HTML-parser')
-        meetings = run_fallback_parse(eigersund_cfg)
+        logger.info('🔁 Fallback: bruker HTML-parser')
+        meetings = run_fallback_parse(eigersund_cfg, MoteParser)
 
     print_meetings(meetings)
+
+
+if __name__ == '__main__':
+    main()

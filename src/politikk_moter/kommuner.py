@@ -152,7 +152,7 @@ KOMMUNE_CONFIGS: List[KommuneConfig] = [
         name="Randaberg kommune",
         url="https://opengov.360online.com/Meetings/randaberg",
         type="custom",
-        groups=("extended", "turnus"),
+        groups=("core", "extended", "turnus"),
     ),
 ]
 

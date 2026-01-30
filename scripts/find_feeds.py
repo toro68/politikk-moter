@@ -49,7 +49,7 @@ def find_alternative_endpoints():
                         print(f"  ✅ Funnet: {url} ({content_type})")
                     elif len(response.content) > 100:  # Ikke bare en feilside
                         print(f"  🔍 Mulig: {url} ({len(response.content)} bytes)")
-            except:
+            except requests.RequestException:
                 pass
         
         # Sjekk hovedsiden for RSS-lenker
@@ -68,7 +68,7 @@ def find_alternative_endpoints():
                         if not href.startswith('http'):
                             href = domain + href
                         print(f"  📡 RSS/Feed funnet: {href}")
-        except:
+        except requests.RequestException:
             pass
 
 if __name__ == '__main__':

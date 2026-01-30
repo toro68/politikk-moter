@@ -19,6 +19,7 @@ if SRC.exists():
 from politikk_moter import scraper  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from politikk_moter.mock_data import get_mock_meetings  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from politikk_moter.models import ensure_meeting  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from politikk_moter.pipeline_config import get_pipeline_configs  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
 @pytest.fixture(autouse=True)
@@ -135,6 +136,13 @@ def test_format_slack_message_links_summary_when_urls_provided():
     assert "*Oppsummering per kommune*" in message
     assert "• <https://example.com/sauda|Sauda kommune>: 0 møter" in message
     assert "• (Turnus-kalender): 0 møter" in message
+
+
+def test_standard_pipeline_expected_summary_includes_randaberg():
+    pipeline = next(cfg for cfg in get_pipeline_configs() if cfg.key == "standard")
+    expected_by_label = scraper._expected_kommuner_by_batch(pipeline)
+
+    assert "Randaberg kommune" in expected_by_label["turnus"]
 
 
 def test_split_meetings_for_turnus_uses_named_kommuner():

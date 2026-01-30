@@ -4,23 +4,25 @@ Hent Eigersund møteplan, konverter til "meeting"-objekter, og send Slack-meldin
 Bruker samme format som `scraper.py`.
 Kjør med --debug for å ikke sende (viser melding).
 """
+import logging
 import os
 import sys
 from datetime import datetime
+from urllib.parse import urljoin
 
-# sørg for at src/ er på path
-repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-src_dir = os.path.join(repo_root, 'src')
-if src_dir not in sys.path:
-    sys.path.insert(0, src_dir)
-
-from politikk_moter.scraper import (  # pylint: disable=import-error
-    filter_meetings_by_date_range,
-    format_slack_message,
-)
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
+
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger(__name__)
+
+
+def _bootstrap_package() -> None:
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    src_dir = os.path.join(repo_root, 'src')
+    if src_dir not in sys.path:
+        sys.path.insert(0, src_dir)
 
 URL = "https://innsyn.onacos.no/eigersund/mote/wfinnsyn.ashx?response=moteplan&"
 
@@ -42,8 +44,11 @@ def fetch_table(url=URL):
 
 
 def parse_table_to_meetings(meeting_table, base_url=URL, year=None):
+    current_month = None
     if year is None:
-        year = datetime.now().year
+        now = datetime.now()
+        year = now.year
+        current_month = now.month
     parsed_meetings = []
     for tr in meeting_table.find_all('tr'):
         cols = tr.find_all(['td','th'])
@@ -73,7 +78,10 @@ def parse_table_to_meetings(meeting_table, base_url=URL, year=None):
                 except ValueError:
                     continue
                 try:
-                    dt = datetime(year, month, day)
+                    target_year = year
+                    if current_month is not None and month < current_month and current_month >= 11:
+                        target_year += 1
+                    dt = datetime(target_year, month, day)
                 except ValueError:
                     continue
                 parsed_meetings.append({
@@ -83,48 +91,57 @@ def parse_table_to_meetings(meeting_table, base_url=URL, year=None):
                     'location': 'Ikke oppgitt',
                     'kommune': 'Eigersund kommune',
                     'url': link,
-                    'raw_text': f'Eigersund: {committee} {day}.{month}.{year}'
+                    'raw_text': f'Eigersund: {committee} {day}.{month}.{target_year}'
                 })
     return parsed_meetings
 
 
 def send_to_slack(message: str, webhook_env: str = 'SLACK_WEBHOOK_URL', force_send: bool = False) -> bool:
     webhook_url = os.getenv(webhook_env)
-    is_test_mode = ('--debug' in sys.argv or '--test' in sys.argv or os.getenv('TESTING','').lower() in ['true','1','yes'])
-    if is_test_mode and not force_send:
-        print('DEBUG: Viser melding uten å sende')
-        print('='*40)
-        print(message)
-        print('='*40)
+    if send_to_slack.test_mode and not force_send:
+        logger.info('DEBUG: Viser melding uten å sende')
+        logger.info('%s', '=' * 40)
+        logger.info('%s', message)
+        logger.info('%s', '=' * 40)
         return True
     if not webhook_url:
-        print(f'Feil: {webhook_env} ikke satt')
+        logger.error('Feil: %s ikke satt', webhook_env)
         return False
     payload = {'text': message}
     try:
         resp = requests.post(webhook_url, json=payload, timeout=10)
         resp.raise_for_status()
-        print('✅ Sendt til Slack')
+        logger.info('✅ Sendt til Slack')
         return True
     except requests.RequestException as exc:
-        print('❌ Feil ved sending til Slack:', exc)
+        logger.error('❌ Feil ved sending til Slack: %s', exc)
         return False
 
 
+send_to_slack.test_mode = False
+
+
 if __name__ == '__main__':
-    debug_mode = '--debug' in sys.argv or '--test' in sys.argv
+    _bootstrap_package()
+    from politikk_moter.cli_utils import is_debug_mode, is_force_send, is_test_mode
+    from politikk_moter.scraper import (
+        filter_meetings_by_date_range,
+        format_slack_message,
+    )
+    debug_mode = is_debug_mode()
+    send_to_slack.test_mode = is_test_mode()
     try:
         table, soup = fetch_table()
         meetings = parse_table_to_meetings(table)
         # bruk filter fra scraper for neste 10 dager
         filtered = filter_meetings_by_date_range(meetings, days_ahead=9)
         slack_message = format_slack_message(filtered)
-        sent = send_to_slack(slack_message, force_send='--force' in sys.argv)
+        sent = send_to_slack(slack_message, force_send=is_force_send())
         if not debug_mode and not sent:
             sys.exit(1)
     except requests.RequestException as exc:
-        print('Feil ved henting av tabell:', exc)
+        logger.error('Feil ved henting av tabell: %s', exc)
         sys.exit(2)
     except Exception as exc:  # pylint: disable=broad-except
-        print('Feil i skriptet:', exc)
+        logger.exception('Feil i skriptet: %s', exc)
         sys.exit(2)

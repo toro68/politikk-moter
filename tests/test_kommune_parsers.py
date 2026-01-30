@@ -18,7 +18,11 @@ if SRC.exists():
 
 from politikk_moter import eigersund_parser  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from politikk_moter.kommuner import KOMMUNE_CONFIGS  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from politikk_moter.playwright_scraper import PlaywrightMoteParser  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+
+playwright_scraper = pytest.importorskip("politikk_moter.playwright_scraper")
+PlaywrightMoteParser = playwright_scraper.PlaywrightMoteParser
+
+import politikk_moter.scraper as scraper  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from politikk_moter.scraper import MoteParser  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "kommune_html"
@@ -153,6 +157,27 @@ def test_onacos_parser_handles_all_kommuner(monkeypatch: pytest.MonkeyPatch, kom
     meetings = parser.parse_onacos_site("https://innsynpluss.onacos.no", kommune_name)
     assert meetings, f"Onacos parser should return meetings for {kommune_name}"
     assert all(m["kommune"] == kommune_name for m in meetings)
+
+
+def test_onacos_parser_rolls_year_over(monkeypatch: pytest.MonkeyPatch) -> None:
+    parser = MoteParser()
+    html = load_fixture("onacos_sample.html")
+
+    def fake_get(*_args, **_kwargs) -> DummyResponse:
+        return DummyResponse(html)
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2025, 12, 15)
+
+    monkeypatch.setattr(parser.session, "get", fake_get)
+    monkeypatch.setattr(scraper, "datetime", FixedDateTime)
+
+    meetings = parser.parse_onacos_site("https://innsynpluss.onacos.no", "Test kommune")
+    dates = {m["date"] for m in meetings}
+    assert "2026-01-12" in dates
+    assert "2026-02-03" in dates
 
 
 def test_eigersund_parser_reads_table_and_details(monkeypatch: pytest.MonkeyPatch) -> None:

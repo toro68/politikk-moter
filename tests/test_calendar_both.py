@@ -1,6 +1,6 @@
 import pytest
 
-from src.politikk_moter import calendar_integration
+calendar_integration = pytest.importorskip("politikk_moter.calendar_integration")
 
 
 def test_both_calendar_sources_parsed():

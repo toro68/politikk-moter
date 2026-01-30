@@ -4,6 +4,7 @@
 
 import asyncio
 import html
+import logging
 import os
 import re
 import sys
@@ -14,11 +15,16 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 
+from .cli_utils import is_test_mode
 from .kommuner import get_default_kommune_configs, get_kommune_configs
 from .pipeline_config import PipelineConfig, get_pipeline_configs
 from .models import Meeting, ensure_meeting
 # Import Playwright scraper for JavaScript-heavy sites
 from .reporting import format_slack_message
+
+_IMPORT_WARNINGS: List[str] = []
+
+logger = logging.getLogger(__name__)
 
 CALENDAR_EXPECTED_LABELS = {
     "turnus": {"name": "(Turnus-kalender)", "label": "turnus"},
@@ -32,7 +38,9 @@ try:
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
-    print("⚠️  Playwright ikke tilgjengelig. Bruker kun requests/BeautifulSoup.")
+    _IMPORT_WARNINGS.append(
+        "⚠️  Playwright ikke tilgjengelig. Bruker kun requests/BeautifulSoup."
+    )
 
 # Import Google Calendar integration
 try:
@@ -42,7 +50,7 @@ except ImportError:
     CALENDAR_AVAILABLE = False
     get_calendar_meetings = None  # type: ignore[assignment]
     get_calendar_meetings_for_sources = None  # type: ignore[assignment]
-    print("⚠️  Google Calendar-integrasjon ikke tilgjengelig.")
+    _IMPORT_WARNINGS.append("⚠️  Google Calendar-integrasjon ikke tilgjengelig.")
 
 # Konfigurasjon av kilde-URLer (beholder globalt navn for bakoverkompatibilitet i tester)
 KOMMUNE_URLS = get_default_kommune_configs()
@@ -326,8 +334,11 @@ class MoteParser:
             
             return unique_meetings
             
-        except Exception as e:
-            print(f"Feil ved parsing av {kommune_name}: {e}")
+        except requests.exceptions.RequestException:
+            logger.exception("Feil ved henting av %s", kommune_name)
+            return []
+        except Exception:
+            logger.exception("Feil ved parsing av %s", kommune_name)
             return []
     
     def parse_onacos_site(self, url: str, kommune_name: str) -> List[Dict]:
@@ -365,6 +376,7 @@ class MoteParser:
 
             today = datetime.now()
             current_year = today.year
+            current_month = today.month
 
             if calendar_table:
                 # Map header index -> month number
@@ -400,9 +412,12 @@ class MoteParser:
                                 parts = [day_text]
                             for part in parts:
                                 day = int(part)
-                                # Construct date; assume current year. If month earlier than current month and we're late in year, could be next year - keep simple for now.
+                                # Construct date; handle year rollover if we are late in the year.
                                 try:
-                                    dt = datetime(current_year, month_num, day)
+                                    year = current_year
+                                    if month_num < current_month and current_month >= 11:
+                                        year += 1
+                                    dt = datetime(year, month_num, day)
                                 except ValueError:
                                     # invalid date (e.g., 30 Feb) - skip
                                     continue
@@ -427,8 +442,11 @@ class MoteParser:
             
             return meetings
             
-        except Exception as e:
-            print(f"Feil ved parsing av {kommune_name}: {e}")
+        except requests.exceptions.RequestException:
+            logger.exception("Feil ved henting av %s", kommune_name)
+            return []
+        except Exception:
+            logger.exception("Feil ved parsing av %s", kommune_name)
             return []
     
     def parse_elements_site(self, url: str, kommune_name: str) -> List[Dict]:
@@ -456,8 +474,11 @@ class MoteParser:
             
             return meetings
             
-        except Exception as e:
-            print(f"Feil ved parsing av {kommune_name}: {e}")
+        except requests.exceptions.RequestException:
+            logger.exception("Feil ved henting av %s", kommune_name)
+            return []
+        except Exception:
+            logger.exception("Feil ved parsing av %s", kommune_name)
             return []
     
     def parse_custom_site(self, url: str, kommune_name: str) -> List[Dict]:
@@ -554,8 +575,11 @@ class MoteParser:
             
             return unique_meetings
             
-        except Exception as e:
-            print(f"Feil ved parsing av {kommune_name}: {e}")
+        except requests.exceptions.RequestException:
+            logger.exception("Feil ved henting av %s", kommune_name)
+            return []
+        except Exception:
+            logger.exception("Feil ved parsing av %s", kommune_name)
             return []
 
     def _parse_klepp_meetings(self, soup: BeautifulSoup, base_url: str, kommune_name: str) -> List[Dict]:
@@ -776,7 +800,8 @@ class MoteParser:
                     a = child.get('aria-label')
                     t = child.get('title')
                 except Exception:
-                    a = None; t = None
+                    a = None
+                    t = None
                 if a:
                     candidate_texts.append(a)
                 if t:
@@ -1001,7 +1026,6 @@ def scrape_all_meetings(
         )
 
     for kommune_config in kommuner:
-        url_value = (kommune_config.get('url') or '').lower()
         # ACOS/Onacos/Elements, Digdem og andre JS-baserte innsynsider trenger Playwright
         requires_playwright = _requires_playwright_for_config(kommune_config)
         if requires_playwright:
@@ -1271,13 +1295,9 @@ def send_to_slack(
         return False
     
     # Sjekk om vi er i test-modus (hindrer utilsiktet sending)
-    is_test_mode = (
-        '--debug' in sys.argv or 
-        '--test' in sys.argv or
-        os.getenv('TESTING', '').lower() in ['true', '1', 'yes']
-    )
+    test_mode = is_test_mode()
     
-    if is_test_mode and not force_send:
+    if test_mode and not force_send:
         print("🚫 Test-modus: Sender IKKE til Slack (bruk --force for å overstyre)")
         if resolved_webhook:
             print("Webhook URL: [redacted]")
@@ -1305,6 +1325,9 @@ def send_to_slack(
 def main():
     """Hovedfunksjon."""
     print("🏛️  Starter scraping av politiske møter...")
+
+    for warning in _IMPORT_WARNINGS:
+        print(warning)
     
     force_send = '--force' in sys.argv
     debug_mode = '--debug' in sys.argv or '--test' in sys.argv

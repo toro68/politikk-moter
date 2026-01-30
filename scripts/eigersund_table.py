@@ -32,17 +32,16 @@ def fetch_table(url=URL):
 
 def parse_table(table, base_url=URL):
     rows = []
-    headers = []
     # Hent header-rad hvis tilstede
     thead = table.find('thead')
     if thead:
         header_cells = thead.find_all('th')
-        headers = [th.get_text(strip=True) for th in header_cells]
+        [th.get_text(strip=True) for th in header_cells]
     else:
         # prøv første tr
         first_tr = table.find('tr')
         if first_tr:
-            headers = [th.get_text(strip=True) for th in first_tr.find_all(['th','td'])]
+            [th.get_text(strip=True) for th in first_tr.find_all(['th','td'])]
     # Nå parse rader
     for tr in table.find_all('tr'):
         cols = tr.find_all(['td','th'])

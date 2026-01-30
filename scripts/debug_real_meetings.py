@@ -3,26 +3,34 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / "src"
-if str(SRC) not in sys.path:
-    sys.path.insert(0, str(SRC))
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger(__name__)
 
-from politikk_moter.models import ensure_meeting  # pylint: disable=import-error
-from politikk_moter.scraper import scrape_all_meetings  # pylint: disable=import-error
+
+def _bootstrap_package() -> None:
+    root = Path(__file__).resolve().parents[1]
+    src_dir = root / "src"
+    if str(src_dir) not in sys.path:
+        sys.path.insert(0, str(src_dir))
+
+
 
 def print_real_meetings():
     """Vis alle møter som faktisk blir funnet fra scraping"""
-    print("🔍 Finner alle møter fra scraping...")
+    _bootstrap_package()
+    from politikk_moter.models import ensure_meeting
+    from politikk_moter.scraper import scrape_all_meetings
+    logger.info("🔍 Finner alle møter fra scraping...")
     
     meetings = [ensure_meeting(m) for m in scrape_all_meetings()]
     
-    print(f"\n📊 Totalt funnet: {len(meetings)} møter")
-    print("\n🏛️ Møter fra de forskjellige kildene:")
+    logger.info("\n📊 Totalt funnet: %s møter", len(meetings))
+    logger.info("\n🏛️ Møter fra de forskjellige kildene:")
     
     # Grupper etter kommune
     by_kommune = {}
@@ -31,14 +39,20 @@ def print_real_meetings():
         by_kommune.setdefault(kommune, []).append(meeting)
     
     for kommune, kommune_meetings in by_kommune.items():
-        print(f"\n📍 {kommune}: {len(kommune_meetings)} møter")
+        logger.info("\n📍 %s: %s møter", kommune, len(kommune_meetings))
         
         # Vis første 5 møter fra hver kommune
         for i, meeting in enumerate(kommune_meetings[:5]):
-            print(f"  {i+1}. {meeting.date or 'TBD'} {meeting.time or 'TBD'} - {meeting.title or 'Ingen tittel'}")
+            logger.info(
+                "  %s. %s %s - %s",
+                i + 1,
+                meeting.date or "TBD",
+                meeting.time or "TBD",
+                meeting.title or "Ingen tittel",
+            )
         
         if len(kommune_meetings) > 5:
-            print(f"  ... og {len(kommune_meetings) - 5} til")
+            logger.info("  ... og %s til", len(kommune_meetings) - 5)
 
 if __name__ == "__main__":
     print_real_meetings()

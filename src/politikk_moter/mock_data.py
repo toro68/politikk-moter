@@ -159,12 +159,12 @@ def get_mock_meetings() -> List[Dict]:
     for i in range(3):
         meeting_date = base_date + timedelta(days=i*7)  # Ukentlige møter
         future_meetings.append({
-            'title': f'Formannskapet',
+            'title': 'Formannskapet',
             'date': meeting_date.strftime('%Y-%m-%d'),
             'time': '14:00',
             'location': 'Kommunestyresalen',
             'kommune': 'Demo kommune',
-            'raw_text': f'Automatisk generert møte for demo'
+            'raw_text': 'Automatisk generert møte for demo'
         })
     
     return mock_meetings + future_meetings

@@ -27,7 +27,7 @@ EXPECTED_KOMMUNER = {
     "Bymiljøpakken": {"type": "custom", "groups": {"core"}},
     "Eigersund kommune": {"type": "onacos", "groups": {"core", "playwright"}},
     "Sandnes kommune": {"type": "custom", "groups": {"core", "turnus", "extended"}},
-    "Randaberg kommune": {"type": "custom", "groups": {"extended", "turnus"}},
+    "Randaberg kommune": {"type": "custom", "groups": {"core", "extended", "turnus"}},
     "Stavanger kommune": {"type": "custom", "groups": {"core", "turnus"}},
 }
 
@@ -55,6 +55,7 @@ def test_get_kommune_configs_respects_groups() -> None:
     core_names = {cfg["name"] for cfg in core}
     assert "Sandnes kommune" in core_names
     assert "Sauda kommune" in core_names
+    assert "Randaberg kommune" in core_names
 
     turnus = get_kommune_configs(["turnus"])
     turnus_names = {cfg["name"] for cfg in turnus}

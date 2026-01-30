@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from politikk_moter import calendar_integration as cal  # pylint: disable=import-error
+import pytest
+
+cal = pytest.importorskip("politikk_moter.calendar_integration")
 
 
 EXPECTED_SOURCES = {

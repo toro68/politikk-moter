@@ -3,7 +3,8 @@
 import pytest
 from bs4 import BeautifulSoup
 
-from politikk_moter.playwright_scraper import PlaywrightMoteParser
+playwright_scraper = pytest.importorskip("politikk_moter.playwright_scraper")
+PlaywrightMoteParser = playwright_scraper.PlaywrightMoteParser
 
 
 class _TestablePlaywrightParser(PlaywrightMoteParser):

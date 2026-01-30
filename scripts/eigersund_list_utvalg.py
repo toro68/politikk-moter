@@ -6,7 +6,7 @@ Viser også hvor mange ganger hvert utvalg har dager oppført og hvilke måneder
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
-from collections import defaultdict, Counter
+from collections import defaultdict
 import sys
 
 URL = "https://innsyn.onacos.no/eigersund/mote/wfinnsyn.ashx?response=moteplan&"

@@ -131,6 +131,23 @@ Kommunesidene bruker ofte:
 
 ## Installasjon og testing
 
+## Dev-setup (anbefalt)
+
+- Bruk Python 3.12 (samme versjon lokalt og i venv).
+- Opprett og aktiver venv før install:
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+```
+
+- Kjør tester med venv-python:
+
+```bash
+python -m pytest -q
+```
+
 ### 1. Grunnleggende oppsett
 
 ```bash
