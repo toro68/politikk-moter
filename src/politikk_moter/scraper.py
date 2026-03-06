@@ -492,10 +492,10 @@ class MoteParser:
         try:
             response = self.session.get(url, timeout=10)
             response.raise_for_status()
-            soup = BeautifulSoup(response.content, 'html.parser')
             html_text = getattr(response, 'text', None)
-            if html_text is None and response.content:
+            if not html_text and response.content:
                 html_text = response.content.decode('utf-8', errors='ignore')
+            soup = BeautifulSoup(html_text or '', 'html.parser')
 
             if 'klepp' in kommune_name.lower():
                 return self._parse_klepp_meetings(soup, url, kommune_name)
