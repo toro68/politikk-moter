@@ -246,6 +246,10 @@ def test_stavanger_custom_cards_parsed(monkeypatch):
                 def content(self):  # noqa: D401 - tilfredsstill requests API
                         return html.encode("utf-8")
 
+                @property
+                def text(self):  # noqa: D401 - tilfredsstill requests API
+                        return html
+
         monkeypatch.setattr(parser.session, "get", lambda *_args, **_kwargs: FakeResponse())
 
         meetings = parser.parse_custom_site("https://stavanger-elm.digdem.no/motekalender", "Stavanger kommune")
