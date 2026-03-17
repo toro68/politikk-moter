@@ -15,6 +15,16 @@ from bs4 import BeautifulSoup
 from .kommuner import get_default_kommune_configs, get_kommune_configs
 from .pipeline_config import PipelineConfig, get_pipeline_configs
 
+RECOVERABLE_SCRAPER_ERRORS = (
+    requests.RequestException,
+    AttributeError,
+    TypeError,
+    ValueError,
+    RuntimeError,
+    OSError,
+    re.error,
+)
+
 # Import Playwright scraper for JavaScript-heavy sites
 try:
     from .playwright_scraper import scrape_with_playwright
@@ -40,7 +50,7 @@ KOMMUNE_URLS = get_default_kommune_configs()
 try:
     from .eigersund_parser import parse_eigersund_meetings
     EIGERSUND_AVAILABLE = True
-except Exception:
+except ImportError:
     EIGERSUND_AVAILABLE = False
 
 class MoteParser:
@@ -153,7 +163,7 @@ class MoteParser:
             
             return unique_meetings
             
-        except Exception as e:
+        except RECOVERABLE_SCRAPER_ERRORS as e:
             print(f"Feil ved parsing av {kommune_name}: {e}")
             return []
     
@@ -166,7 +176,7 @@ class MoteParser:
             try:
                 if EIGERSUND_AVAILABLE and (('eigersund' in (kommune_name or '').lower()) or ('eigersund' in (url or '').lower())):
                     return parse_eigersund_meetings(url, kommune_name, days_ahead=10)
-            except Exception:
+            except RECOVERABLE_SCRAPER_ERRORS:
                 # non-fatal: fall through to generic parsing
                 pass
             response = self.session.get(url, timeout=10)
@@ -188,7 +198,6 @@ class MoteParser:
                 headers = [th.get_text(strip=True).lower() for th in table.find_all('th')]
                 if any(h[:3] in months_map for h in headers if h):
                     calendar_table = table
-                    header_texts = headers
                     break
 
             today = datetime.now()
@@ -255,7 +264,7 @@ class MoteParser:
             
             return meetings
             
-        except Exception as e:
+        except RECOVERABLE_SCRAPER_ERRORS as e:
             print(f"Feil ved parsing av {kommune_name}: {e}")
             return []
     
@@ -284,7 +293,7 @@ class MoteParser:
             
             return meetings
             
-        except Exception as e:
+        except RECOVERABLE_SCRAPER_ERRORS as e:
             print(f"Feil ved parsing av {kommune_name}: {e}")
             return []
     
@@ -323,7 +332,7 @@ class MoteParser:
             
             return unique_meetings
             
-        except Exception as e:
+        except RECOVERABLE_SCRAPER_ERRORS as e:
             print(f"Feil ved parsing av {kommune_name}: {e}")
             return []
 
@@ -401,23 +410,16 @@ class MoteParser:
 
             # Bygg liste av kandidat-tekster: synlig tekst + aria-label/title fra element og barn
             candidate_texts = [text]
-            try:
-                aria = element.get('aria-label')
-                title_attr = element.get('title')
-            except Exception:
-                aria = None
-                title_attr = None
+            aria = element.get('aria-label') if hasattr(element, 'get') else None
+            title_attr = element.get('title') if hasattr(element, 'get') else None
             if aria:
                 candidate_texts.insert(0, aria)
             if title_attr:
                 candidate_texts.insert(0, title_attr)
             # child attributes
             for child in element.find_all(True):
-                try:
-                    a = child.get('aria-label')
-                    t = child.get('title')
-                except Exception:
-                    a = None; t = None
+                a = child.get('aria-label')
+                t = child.get('title')
                 if a:
                     candidate_texts.append(a)
                 if t:
@@ -536,7 +538,7 @@ class MoteParser:
                 'raw_text': text[:300]  # For debugging, begrens lengde
             }
             
-        except Exception as e:
+        except RECOVERABLE_SCRAPER_ERRORS as e:
             print(f"Feil ved ekstraksjon av møtedata: {e}")
             return None
 
@@ -565,7 +567,7 @@ def scrape_all_meetings(
                 calendar_meetings = get_calendar_meetings(days_ahead=9, test_mode=debug_mode)  # type: ignore[misc]
             all_meetings.extend(calendar_meetings)
             print(f"Fant {len(calendar_meetings)} møter fra Google Calendar")
-        except Exception as e:
+        except RECOVERABLE_SCRAPER_ERRORS as e:
             print(f"⚠️  Google Calendar-feil: {e}")
 
     # Separer sider basert på om de trenger Playwright
@@ -588,7 +590,7 @@ def scrape_all_meetings(
                 try:
                     print(f"🔎 Spesialparser for {kommune_config['name']}")
                     meetings = parse_eigersund_meetings(kommune_config['url'], kommune_config['name'])
-                except Exception as e:
+                except RECOVERABLE_SCRAPER_ERRORS as e:
                     print(f"⚠️  Eigersund parser-feil: {e}")
                     meetings = []
             else:
@@ -621,7 +623,7 @@ def scrape_all_meetings(
                     m['url'] = name_to_url.get(m.get('kommune')) or ''
                 all_meetings.append(m)
             print(f"Playwright fant {len(playwright_meetings)} møter totalt")
-        except Exception as e:
+        except RECOVERABLE_SCRAPER_ERRORS as e:
             print(f"Playwright-feil: {e}")
     elif js_heavy_sites:
         print("⚠️  Playwright ikke tilgjengelig for JavaScript-tunge sider")
