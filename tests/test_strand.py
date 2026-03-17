@@ -9,7 +9,7 @@ import re
 
 def test_working_site():
     """Test en side som definitivt skal ha møter."""
-    url = "https://www.strand.kommune.no/tjenester/politikk-innsyn-og-medvirkning/politiske-moter-og-sakspapirer/politisk-motekalender/"
+    url = "https://www.strand.kommune.no/tjenester/politikk-innsyn-og-medvirkning/postliste-dokumenter-og-vedtak/politiske-moter-og-sakspapirer/"
     
     try:
         session = requests.Session()

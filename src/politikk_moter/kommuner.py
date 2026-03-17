@@ -35,7 +35,7 @@ KOMMUNE_CONFIGS: List[KommuneConfig] = [
     ),
     KommuneConfig(
         name="Strand kommune",
-        url="https://www.strand.kommune.no/tjenester/politikk-innsyn-og-medvirkning/politiske-moter-og-sakspapirer/politisk-motekalender/",
+        url="https://www.strand.kommune.no/tjenester/politikk-innsyn-og-medvirkning/postliste-dokumenter-og-vedtak/politiske-moter-og-sakspapirer/",
         type="acos",
         groups=("core",),
     ),

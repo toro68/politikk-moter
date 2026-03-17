@@ -9,7 +9,7 @@ import re
 
 def inspect_strand_html():
     """Inspiser raw HTML fra Strand kommune."""
-    url = "https://www.strand.kommune.no/tjenester/politikk-innsyn-og-medvirkning/politiske-moter-og-sakspapirer/politisk-motekalender/"
+    url = "https://www.strand.kommune.no/tjenester/politikk-innsyn-og-medvirkning/postliste-dokumenter-og-vedtak/politiske-moter-og-sakspapirer/"
     
     try:
         session = requests.Session()
