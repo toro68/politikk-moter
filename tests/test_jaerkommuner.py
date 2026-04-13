@@ -47,6 +47,11 @@ TEST_CASES: Sequence[KommuneCase] = (
         url="https://nyttinnsyn.sola.kommune.no/wfinnsyn.ashx?response=moteplan&",
         expected_keywords=("møte", "utvalg", "møteplan", "saksliste"),
     ),
+    KommuneCase(
+        kommune="Randaberg kommune",
+        url="https://opengov.360online.com/Meetings/randaberg",
+        expected_keywords=("meeting", "møte", "agenda", "saksliste", "utvalg"),
+    ),
 )
 
 

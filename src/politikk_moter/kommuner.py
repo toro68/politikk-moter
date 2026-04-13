@@ -120,8 +120,8 @@ KOMMUNE_CONFIGS: List[KommuneConfig] = [
     # Flere kommuner kan legges til her (f.eks. for utvidet Slack-kanal)
     KommuneConfig(
         name="Randaberg kommune",
-        url="https://www.randaberg.kommune.no/innsyn/politikk/",
-        type="acos",
+        url="https://opengov.360online.com/Meetings/randaberg",
+        type="custom",
         groups=("extended",),
     ),
 ]
