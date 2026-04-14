@@ -13,8 +13,8 @@ from politikk_moter.kommuner import get_kommune_configs
 pytestmark = [
     pytest.mark.network,
     pytest.mark.skipif(
-        os.getenv("RUN_NETWORK_TESTS") != "1",
-        reason="Set RUN_NETWORK_TESTS=1 to run live URL checks.",
+        os.getenv("RUN_NETWORK_TESTS") != "1" or os.getenv("GITHUB_ACTIONS") == "true",
+        reason="Set RUN_NETWORK_TESTS=1 to run live URL checks locally; skipped in GitHub Actions.",
     ),
 ]
 
