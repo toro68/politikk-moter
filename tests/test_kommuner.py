@@ -22,7 +22,7 @@ EXPECTED_KOMMUNER = {
     "Klepp kommune": {"type": "custom", "groups": {"core", "turnus"}},
     "Gjesdal kommune": {"type": "custom", "groups": {"core", "turnus"}},
     "Kvitsøy kommune": {"type": "custom", "groups": {"core", "turnus"}},
-    "Hå kommune": {"type": "acos", "groups": {"core", "turnus"}},
+    "Hå kommune": {"type": "custom", "groups": {"core", "turnus"}},
     "Sola kommune": {"type": "onacos", "groups": {"core", "playwright", "turnus"}},
     "Bymiljøpakken": {"type": "custom", "groups": {"core"}},
     "Eigersund kommune": {"type": "onacos", "groups": {"core", "playwright"}},

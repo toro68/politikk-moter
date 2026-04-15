@@ -695,8 +695,7 @@ class PlaywrightMoteParser:
                 if key in months_map:
                     month_indices[idx] = months_map[key]
 
-            # DEBUG: show detected headers
-            print(f"[DEBUG Playwright calendar headers] {header_texts}")
+
 
             # Iterate subsequent rows (skip header row)
             for row in table.find_all('tr')[1:]:
@@ -711,9 +710,7 @@ class PlaywrightMoteParser:
                     if col_idx >= len(cols):
                         continue
                     cell = cols[col_idx]
-                    # DEBUG: print cell for the specific committee we're checking
-                    if 'råd for personer' in committee.lower():
-                        print(f"[DEBUG Playwright row] committee={committee} col_idx={col_idx} month={month_num} cell='{cell.get_text(strip=True)}'")
+
                     # extract day numbers from anchors or plain text
                     days = []
                     a_tags = cell.find_all('a')

@@ -59,7 +59,7 @@ def send_to_slack_with_webhook(
         logger.info("✅ Melding sendt til sekundær Slack-kanal")
         return True
     except requests.exceptions.RequestException as e:
-        logger.error("❌ Feil ved sending til sekundær Slack-kanal: %s", e)
+        logger.error("❌ Feil ved sending til sekundær Slack-kanal: %s", e.__class__.__name__)
         return False
 
 

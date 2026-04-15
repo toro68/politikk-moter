@@ -73,7 +73,8 @@ def main() -> None:
         print(f"- {name}: {date} {time} | {_field(m, 'title')}")
 
     print("\n=== Antall møter innen 10 dager ===")
-    filtered_10 = filter_meetings_by_date_range(meetings, days_ahead=10)
+    all_meetings = [m for ms in by_kommune.values() for m in ms]
+    filtered_10 = filter_meetings_by_date_range(all_meetings, days_ahead=10)
     by_kommune_10 = defaultdict(list)
     for m in filtered_10:
         by_kommune_10[_field(m, "kommune") or "(ukjent)"].append(m)

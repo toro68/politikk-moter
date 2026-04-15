@@ -114,7 +114,7 @@ def send_to_slack(message: str, webhook_env: str = 'SLACK_WEBHOOK_URL', force_se
         logger.info('✅ Sendt til Slack')
         return True
     except requests.RequestException as exc:
-        logger.error('❌ Feil ved sending til Slack: %s', exc)
+        logger.error('❌ Feil ved sending til Slack: %s', exc.__class__.__name__)
         return False
 
 

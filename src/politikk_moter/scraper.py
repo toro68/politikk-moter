@@ -1332,7 +1332,7 @@ def send_to_slack(
         print("✅ Melding sendt til Slack!")
         return True
     except requests.exceptions.RequestException as e:
-        print(f"❌ Feil ved sending til Slack: {e}")
+        print(f"❌ Feil ved sending til Slack: {e.__class__.__name__}")
         return False
 
 def main():
