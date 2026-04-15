@@ -46,7 +46,7 @@ TEST_CASES: Sequence[KommuneCase] = (
     ),
     KommuneCase(
         kommune="Hå kommune",
-        url="https://www.ha.no/politikk-og-samfunnsutvikling/mote-og-sakspapir/",
+        url="https://www.ha.no/politikk-og-planar/politikk/moteoversikt/",
         expected_keywords=("møte", "saksliste", "politikk", "kommunestyre", "utvalg"),
     ),
     KommuneCase(

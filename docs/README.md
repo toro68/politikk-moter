@@ -70,7 +70,7 @@ Når ingen møter finnes i de neste 10 dagene, brukes realistiske mock-data som 
 - Klepp kommune: <https://opengov.360online.com/Meetings/KLEPP>
 - Gjesdal kommune: <https://opengov.360online.com/Meetings/GJESDAL>
 - Kvitsøy kommune: <https://opengov.360online.com/Meetings/KVITSOY>
-- Hå kommune: <https://www.ha.no/politikk-og-samfunnsutvikling/mote-og-sakspapir/>
+- Hå kommune: <https://www.ha.no/politikk-og-planar/politikk/moteoversikt/>
 
 ### Ryfylke, Dalane
 
